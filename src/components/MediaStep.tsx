@@ -340,21 +340,32 @@ export default function MediaStep({ media, onMediaChange, onNext }: MediaStepPro
                   loading="lazy"
                 />
 
-                {/* Video play icon overlay + click to expand trimmer */}
+                {/* Video overlay: play icon + trim button */}
                 {item.type === 'video' && (
-                  <div
-                    className="absolute inset-0 flex items-center justify-center cursor-pointer"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setExpandedVideo(expandedVideo === item.id ? null : item.id);
-                    }}
-                    aria-label="Expand video trimmer"
-                  >
-                    <div className="w-10 h-10 rounded-full bg-black/60 border border-white/30 flex items-center justify-center hover:bg-black/80 transition-colors">
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 cursor-pointer">
+                    {/* Play/expand icon */}
+                    <div
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setExpandedVideo(expandedVideo === item.id ? null : item.id);
+                      }}
+                      className="w-10 h-10 rounded-full bg-black/60 border border-white/30 flex items-center justify-center hover:bg-black/80 hover:border-accent-gold/50 transition-colors"
+                      aria-label="Expand video trimmer"
+                    >
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="white" className="ml-0.5">
                         <polygon points="5,3 19,12 5,21" />
                       </svg>
                     </div>
+                    {/* Trim button — always visible */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setExpandedVideo(expandedVideo === item.id ? null : item.id);
+                      }}
+                      className="text-[9px] font-bold bg-accent-gold/90 text-bg-main px-2 py-0.5 rounded-full hover:bg-accent-gold transition-colors"
+                    >
+                      ✂ TRIM
+                    </button>
                   </div>
                 )}
 
@@ -578,7 +589,7 @@ function VideoTrimmerInline({
 
   return (
     <div className="card-glow p-4">
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="text-accent-gold" strokeWidth="2">
             <rect x="2" y="4" width="20" height="16" rx="2" />
@@ -593,6 +604,9 @@ function VideoTrimmerInline({
           </svg>
         </button>
       </div>
+      <p className="text-[10px] text-accent-gold/70 mb-2">
+        ✂ Drag the gold handles to select which part of the video to use
+      </p>
 
       {/* Video preview */}
       <div className="relative mb-3 rounded-lg overflow-hidden bg-black" style={{ maxHeight: '200px' }}>

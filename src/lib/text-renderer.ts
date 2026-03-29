@@ -15,12 +15,12 @@ import type { CSSProperties } from 'react';
 
 const FONT_FAMILY = 'Inter, system-ui, sans-serif';
 
-/** Maps fontSize token to a fraction of canvas height */
+/** Maps fontSize token to a fraction of canvas height (sized for impact) */
 const FONT_SIZE_SCALE: Record<TextOverlay['fontSize'], number> = {
-  sm: 0.03,
-  md: 0.05,
-  lg: 0.08,
-  xl: 0.12,
+  sm: 0.04,
+  md: 0.065,
+  lg: 0.1,
+  xl: 0.15,
 };
 
 /** Maps fontWeight token to a numeric CSS weight */
@@ -190,6 +190,32 @@ export function drawTextOverlay(
   // Base position
   const baseX = canvasWidth / 2;
   const baseY = canvasHeight * (POSITION_Y_MAP[overlay.position] ?? 0.5);
+
+  // Draw subtle text background plate for readability
+  const textWidth = ctx.measureText(overlay.text).width;
+  const plateH = fontSize * 1.6;
+  const plateW = textWidth + fontSize * 1.5;
+  const plateX = baseX - plateW / 2;
+  const plateY = baseY - plateH / 2;
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+  const plateRadius = fontSize * 0.25;
+  ctx.beginPath();
+  if (typeof ctx.roundRect === 'function') {
+    ctx.roundRect(plateX, plateY, plateW, plateH, plateRadius);
+  } else {
+    // Fallback for older browsers
+    ctx.moveTo(plateX + plateRadius, plateY);
+    ctx.lineTo(plateX + plateW - plateRadius, plateY);
+    ctx.arcTo(plateX + plateW, plateY, plateX + plateW, plateY + plateRadius, plateRadius);
+    ctx.lineTo(plateX + plateW, plateY + plateH - plateRadius);
+    ctx.arcTo(plateX + plateW, plateY + plateH, plateX + plateW - plateRadius, plateY + plateH, plateRadius);
+    ctx.lineTo(plateX + plateRadius, plateY + plateH);
+    ctx.arcTo(plateX, plateY + plateH, plateX, plateY + plateH - plateRadius, plateRadius);
+    ctx.lineTo(plateX, plateY + plateRadius);
+    ctx.arcTo(plateX, plateY, plateX + plateRadius, plateY, plateRadius);
+    ctx.closePath();
+  }
+  ctx.fill();
 
   // Dispatch to per-animation renderer
   switch (overlay.animation) {
@@ -460,10 +486,10 @@ function shiftColor(color: string, seed: number): string {
 
 /** Maps fontSize tokens to approximate CSS pixel values for DOM preview */
 const PREVIEW_FONT_SIZES: Record<TextOverlay['fontSize'], number> = {
-  sm: 12,
-  md: 18,
-  lg: 28,
-  xl: 40,
+  sm: 14,
+  md: 22,
+  lg: 36,
+  xl: 52,
 };
 
 /**

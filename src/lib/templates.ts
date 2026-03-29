@@ -67,6 +67,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
           { effect: 'vignette', intensity: 0.3 },
           { effect: 'letterbox', intensity: 0.8 },
         ],
+        textOverlay: { text: 'Every Moment Matters', position: 'bottom', fontSize: 'md', fontWeight: 'bold', animation: 'fade-in', color: '#fff' },
       },
       {
         slotType: 'any', duration: 5, transition: 'morphDissolve', effect: 'ken-burns', holdPoint: 'face',
@@ -86,6 +87,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
           { effect: 'vignette', intensity: 0.3 },
           { effect: 'letterbox', intensity: 0.8 },
         ],
+        textOverlay: { text: 'A Journey Begins', position: 'center', fontSize: 'lg', fontWeight: 'bold', animation: 'slide-up', color: '#fff' },
       },
       {
         slotType: 'any', duration: 4, transition: 'fade', effect: 'dolly-out', holdPoint: 'rule-of-thirds',
@@ -105,6 +107,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
           { effect: 'letterbox', intensity: 0.8 },
           { effect: 'lightLeak', intensity: 0.2 },
         ],
+        textOverlay: { text: 'The Beauty Within', position: 'top', fontSize: 'md', fontWeight: 'bold', animation: 'fade-in', color: '#fff' },
       },
       {
         slotType: 'any', duration: 3, transition: 'fade', effect: 'slow-zoom', holdPoint: 'center',
@@ -160,6 +163,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
         slotType: 'any', duration: 2, transition: 'flashWhite', effect: 'speed-ramp', holdPoint: 'face',
         motionIntensity: 0.8, transitionDuration: 0.15, speedPreset: 'ramp-dramatic',
         postEffects: [{ effect: 'colorGrade', intensity: 0.6, params: { preset: 'high-contrast' } }],
+        textOverlay: { text: 'NO LIMITS', position: 'center', fontSize: 'lg', fontWeight: 'black', animation: 'scale-pop', color: '#FF6B00' },
       },
       {
         slotType: 'any', duration: 1.5, transition: 'whipBlur', effect: 'bounce', holdPoint: 'center',
@@ -170,6 +174,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
         slotType: 'any', duration: 1, transition: 'slideLeft', effect: 'dolly-in', holdPoint: 'face',
         motionIntensity: 0.8, transitionDuration: 0.2,
         postEffects: [{ effect: 'colorGrade', intensity: 0.6, params: { preset: 'high-contrast' } }],
+        textOverlay: { text: 'SEND IT', position: 'bottom', fontSize: 'md', fontWeight: 'black', animation: 'slide-up', color: '#fff' },
       },
       {
         slotType: 'any', duration: 2, transition: 'cubeRotate', effect: 'orbit', holdPoint: 'center',
@@ -180,6 +185,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
         slotType: 'any', duration: 1.5, transition: 'flashBlack', effect: 'pulse-zoom', holdPoint: 'face',
         motionIntensity: 0.9, transitionDuration: 0.15,
         postEffects: [{ effect: 'colorGrade', intensity: 0.6, params: { preset: 'high-contrast' } }],
+        textOverlay: { text: 'ALL GAS', position: 'center', fontSize: 'lg', fontWeight: 'black', animation: 'scale-pop', color: '#FF6B00' },
       },
       {
         slotType: 'any', duration: 1, transition: 'whipBlur', effect: 'whip-pan', holdPoint: 'center',
@@ -190,6 +196,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
         slotType: 'any', duration: 2, transition: 'flipCard', effect: 'speed-ramp', holdPoint: 'face',
         motionIntensity: 0.8, transitionDuration: 0.25, speedPreset: 'ramp-pulse',
         postEffects: [{ effect: 'colorGrade', intensity: 0.6, params: { preset: 'high-contrast' } }],
+        textOverlay: { text: 'NO BRAKES', position: 'center', fontSize: 'md', fontWeight: 'black', animation: 'glitch-in', color: '#fff' },
       },
       {
         slotType: 'any', duration: 1.5, transition: 'slideLeft', effect: 'bounce', holdPoint: 'center',
@@ -200,6 +207,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
         slotType: 'any', duration: 2, transition: 'flashWhite', effect: 'dolly-out', holdPoint: 'face',
         motionIntensity: 0.7, transitionDuration: 0.2, speedPreset: 'ramp-classic',
         postEffects: [{ effect: 'colorGrade', intensity: 0.6, params: { preset: 'high-contrast' } }],
+        textOverlay: { text: 'FULL SEND', position: 'center', fontSize: 'lg', fontWeight: 'black', animation: 'scale-pop', color: '#FF6B00' },
       },
       {
         slotType: 'any', duration: 2.5, transition: 'fade', effect: 'ken-burns', holdPoint: 'center',
@@ -208,6 +216,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
           { effect: 'colorGrade', intensity: 0.6, params: { preset: 'high-contrast' } },
           { effect: 'vignette', intensity: 0.3 },
         ],
+        textOverlay: { text: '\u{1F525}\u{1F525}\u{1F525}', position: 'center', fontSize: 'xl', fontWeight: 'black', animation: 'scale-pop', color: '#FF6B00' },
       },
     ],
   },
@@ -237,6 +246,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
         slotType: 'any', duration: 3.5, transition: 'fade', effect: 'static', holdPoint: 'center',
         transitionDuration: 0.6,
         postEffects: [{ effect: 'colorGrade', intensity: 0.4, params: { preset: 'pastel-dream' } }],
+        textOverlay: { text: 'simply beautiful', position: 'center', fontSize: 'lg', fontWeight: 'normal', animation: 'fade-in', color: '#fff' },
       },
       {
         slotType: 'any', duration: 3.5, transition: 'fade', effect: 'slow-zoom', holdPoint: 'center',
@@ -252,6 +262,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
         slotType: 'any', duration: 3.5, transition: 'fade', effect: 'static', holdPoint: 'face',
         transitionDuration: 0.6,
         postEffects: [{ effect: 'colorGrade', intensity: 0.4, params: { preset: 'pastel-dream' } }],
+        textOverlay: { text: 'less is more', position: 'bottom', fontSize: 'md', fontWeight: 'normal', animation: 'fade-in', color: 'rgba(255,255,255,0.8)' },
       },
       {
         slotType: 'any', duration: 3.5, transition: 'fade', effect: 'slow-zoom', holdPoint: 'center',
@@ -272,6 +283,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
         slotType: 'any', duration: 3.5, transition: 'fade', effect: 'slow-zoom', holdPoint: 'center',
         motionIntensity: 0.3, transitionDuration: 0.8,
         postEffects: [{ effect: 'colorGrade', intensity: 0.4, params: { preset: 'pastel-dream' } }],
+        textOverlay: { text: '\u2014 fin \u2014', position: 'center', fontSize: 'md', fontWeight: 'normal', animation: 'fade-in', color: 'rgba(255,255,255,0.6)' },
       },
     ],
   },
@@ -332,6 +344,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
           { effect: 'filmGrain', intensity: 0.4 },
           { effect: 'vignette', intensity: 0.4 },
         ],
+        textOverlay: { text: 'REWIND \u25C0\u25C0', position: 'top', fontSize: 'md', fontWeight: 'bold', animation: 'glitch-in', color: '#fff' },
       },
       {
         slotType: 'any', duration: 2.5, transition: 'glitchBlocks', effect: 'static', holdPoint: 'face',
@@ -352,6 +365,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
           { effect: 'filmGrain', intensity: 0.4 },
           { effect: 'vignette', intensity: 0.4 },
         ],
+        textOverlay: { text: 'REC \u25CF', position: 'top', fontSize: 'sm', fontWeight: 'bold', animation: 'none', color: '#ff0000' },
       },
       {
         slotType: 'any', duration: 3, transition: 'fade', effect: 'ken-burns', holdPoint: 'face',
@@ -372,6 +386,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
           { effect: 'filmGrain', intensity: 0.5 },
           { effect: 'vignette', intensity: 0.5 },
         ],
+        textOverlay: { text: 'TRACKING...', position: 'bottom', fontSize: 'sm', fontWeight: 'normal', animation: 'typewriter', color: 'rgba(255,255,255,0.7)' },
       },
       {
         slotType: 'any', duration: 3, transition: 'fade', effect: 'slow-zoom', holdPoint: 'face',
@@ -382,6 +397,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
           { effect: 'filmGrain', intensity: 0.5 },
           { effect: 'vignette', intensity: 0.5 },
         ],
+        textOverlay: { text: 'STOP \u25A0', position: 'center', fontSize: 'lg', fontWeight: 'bold', animation: 'glitch-in', color: '#fff' },
       },
     ],
   },
@@ -437,6 +453,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
           { effect: 'chromaticAberration', intensity: 0.5 },
           { effect: 'scanlines', intensity: 0.2 },
         ],
+        textOverlay: { text: 'LOADING...', position: 'bottom', fontSize: 'md', fontWeight: 'bold', animation: 'typewriter', color: '#00FFFF' },
       },
       {
         slotType: 'any', duration: 2.5, transition: 'whipBlur', effect: 'whip-pan', holdPoint: 'face',
@@ -453,6 +470,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
           { effect: 'colorGrade', intensity: 0.7, params: { preset: 'neon-night' } },
           { effect: 'chromaticAberration', intensity: 0.6 },
         ],
+        textOverlay: { text: 'DATA STREAM', position: 'center', fontSize: 'lg', fontWeight: 'black', animation: 'glitch-in', color: '#00FFFF' },
       },
       {
         slotType: 'any', duration: 2, transition: 'flashBlack', effect: 'orbit', holdPoint: 'face',
@@ -470,6 +488,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
           { effect: 'chromaticAberration', intensity: 0.4 },
           { effect: 'scanlines', intensity: 0.3 },
         ],
+        textOverlay: { text: 'OVERRIDE', position: 'center', fontSize: 'lg', fontWeight: 'black', animation: 'scale-pop', color: '#FF0044' },
       },
       {
         slotType: 'any', duration: 1.5, transition: 'glitchBlocks', effect: 'bounce', holdPoint: 'face',
@@ -487,6 +506,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
           { effect: 'chromaticAberration', intensity: 0.4 },
           { effect: 'bloom', intensity: 0.2 },
         ],
+        textOverlay: { text: 'UPLOAD COMPLETE', position: 'bottom', fontSize: 'md', fontWeight: 'bold', animation: 'typewriter', color: '#00FFFF' },
       },
       {
         slotType: 'any', duration: 2, transition: 'fade', effect: 'dolly-out', holdPoint: 'face',
@@ -496,6 +516,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
           { effect: 'vignette', intensity: 0.5 },
           { effect: 'chromaticAberration', intensity: 0.3 },
         ],
+        textOverlay: { text: 'EXIT ///', position: 'center', fontSize: 'md', fontWeight: 'bold', animation: 'glitch-in', color: '#00FFFF' },
       },
     ],
   },
@@ -530,6 +551,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
           { effect: 'vignette', intensity: 0.3 },
         ],
         speedPreset: 'decelerate',
+        textOverlay: { text: 'perspective', position: 'center', fontSize: 'xl', fontWeight: 'bold', animation: 'fade-in', color: '#fff' },
       },
       {
         slotType: 'any', duration: 3.5, transition: 'curtain', effect: 'tilt-shift', holdPoint: 'center',
@@ -555,6 +577,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
           { effect: 'colorGrade', intensity: 0.5, params: { preset: 'cool-teal' } },
           { effect: 'vignette', intensity: 0.2 },
         ],
+        textOverlay: { text: 'every angle', position: 'bottom', fontSize: 'md', fontWeight: 'bold', animation: 'slide-up', color: 'rgba(255,255,255,0.8)' },
       },
       {
         slotType: 'any', duration: 5, transition: 'morphDissolve', effect: 'crane-up', holdPoint: 'face',
@@ -580,6 +603,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
           { effect: 'colorGrade', intensity: 0.5, params: { preset: 'cool-teal' } },
           { effect: 'vignette', intensity: 0.4 },
         ],
+        textOverlay: { text: 'new depth', position: 'center', fontSize: 'lg', fontWeight: 'bold', animation: 'fade-in', color: '#fff' },
       },
     ],
   },
@@ -637,6 +661,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
           { effect: 'colorGrade', intensity: 0.6, params: { preset: 'golden-hour' } },
           { effect: 'lensFlare', intensity: 0.2 },
         ],
+        textOverlay: { text: 'VITAMIN SEA \u{1F30A}', position: 'center', fontSize: 'lg', fontWeight: 'black', animation: 'scale-pop', color: '#FFD700', glowColor: 'rgba(255,140,0,0.5)' },
       },
       {
         slotType: 'any', duration: 4, transition: 'fade', effect: 'crane-up', holdPoint: 'face',
@@ -654,6 +679,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
           { effect: 'colorGrade', intensity: 0.6, params: { preset: 'golden-hour' } },
           { effect: 'lensFlare', intensity: 0.3 },
         ],
+        textOverlay: { text: 'GOLDEN DAYS', position: 'top', fontSize: 'md', fontWeight: 'bold', animation: 'slide-up', color: '#fff' },
       },
       {
         slotType: 'any', duration: 3.5, transition: 'fade', effect: 'dolly-out', holdPoint: 'rule-of-thirds',
@@ -663,6 +689,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
           { effect: 'bloom', intensity: 0.2 },
           { effect: 'lightLeak', intensity: 0.2 },
         ],
+        textOverlay: { text: 'SOAK IT IN', position: 'center', fontSize: 'lg', fontWeight: 'bold', animation: 'fade-in', color: '#FFD700' },
       },
       {
         slotType: 'any', duration: 3.5, transition: 'morphDissolve', effect: 'ken-burns', holdPoint: 'face',
@@ -738,6 +765,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
           { effect: 'bloom', intensity: 0.2 },
           { effect: 'vignette', intensity: 0.2 },
         ],
+        textOverlay: { text: 'let it snow \u2744', position: 'center', fontSize: 'lg', fontWeight: 'bold', animation: 'fade-in', color: '#E0F0FF', glowColor: 'rgba(135,206,235,0.4)' },
       },
       {
         slotType: 'any', duration: 3.5, transition: 'fade', effect: 'dolly-in', holdPoint: 'face',
@@ -755,6 +783,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
           { effect: 'colorGrade', intensity: 0.6, params: { preset: 'cool-teal' } },
           { effect: 'bloom', intensity: 0.25 },
         ],
+        textOverlay: { text: 'cozy moments', position: 'bottom', fontSize: 'md', fontWeight: 'bold', animation: 'slide-up', color: '#C8DDEF' },
       },
       {
         slotType: 'any', duration: 3.5, transition: 'fade', effect: 'rack-focus', holdPoint: 'face',
@@ -772,6 +801,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
           { effect: 'colorGrade', intensity: 0.6, params: { preset: 'cool-teal' } },
           { effect: 'bloom', intensity: 0.25 },
         ],
+        textOverlay: { text: 'magic in the air', position: 'center', fontSize: 'md', fontWeight: 'bold', animation: 'fade-in', color: '#E0F0FF' },
       },
       {
         slotType: 'any', duration: 3.5, transition: 'fade', effect: 'slow-zoom', holdPoint: 'center',
@@ -834,6 +864,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
           { effect: 'colorGrade', intensity: 0.5, params: { preset: 'electric-pop' } },
           { effect: 'bloom', intensity: 0.2 },
         ],
+        textOverlay: { text: 'TURN UP \u{1F50A}', position: 'center', fontSize: 'lg', fontWeight: 'black', animation: 'scale-pop', color: '#FFD700', glowColor: 'rgba(255,215,0,0.5)' },
       },
       {
         slotType: 'any', duration: 2, transition: 'glitchBlocks', effect: 'bounce', holdPoint: 'face',
@@ -847,6 +878,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
         slotType: 'any', duration: 2, transition: 'flashBlack', effect: 'dolly-in', holdPoint: 'center',
         motionIntensity: 0.7, transitionDuration: 0.15,
         postEffects: [{ effect: 'colorGrade', intensity: 0.5, params: { preset: 'electric-pop' } }],
+        textOverlay: { text: 'BEST NIGHT EVER', position: 'center', fontSize: 'lg', fontWeight: 'black', animation: 'slide-up', color: '#FF1493' },
       },
       {
         slotType: 'any', duration: 2.5, transition: 'flipCard', effect: 'speed-ramp', holdPoint: 'face',
@@ -860,6 +892,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
         slotType: 'any', duration: 2, transition: 'whipBlur', effect: 'pulse-zoom', holdPoint: 'center',
         motionIntensity: 0.9, transitionDuration: 0.2,
         postEffects: [{ effect: 'colorGrade', intensity: 0.5, params: { preset: 'electric-pop' } }],
+        textOverlay: { text: "CAN'T STOP WON'T STOP", position: 'bottom', fontSize: 'md', fontWeight: 'bold', animation: 'glitch-in', color: '#fff' },
       },
       {
         slotType: 'any', duration: 2, transition: 'rgbSplitWipe', effect: 'bounce', holdPoint: 'face',
@@ -873,6 +906,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
         slotType: 'any', duration: 2.5, transition: 'flashWhite', effect: 'whip-pan', holdPoint: 'rule-of-thirds',
         motionIntensity: 0.8, transitionDuration: 0.15, speedPreset: 'ramp-pulse',
         postEffects: [{ effect: 'colorGrade', intensity: 0.5, params: { preset: 'electric-pop' } }],
+        textOverlay: { text: 'ONE MORE TIME', position: 'center', fontSize: 'lg', fontWeight: 'black', animation: 'scale-pop', color: '#FFD700' },
       },
       {
         slotType: 'any', duration: 3, transition: 'fade', effect: 'slow-zoom', holdPoint: 'center',
@@ -940,6 +974,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
           { effect: 'motionBlur', intensity: 0.3 },
           { effect: 'bloom', intensity: 0.2 },
         ],
+        textOverlay: { text: 'FULL CHARGE', position: 'center', fontSize: 'lg', fontWeight: 'black', animation: 'glitch-in', color: '#00BFFF', glowColor: 'rgba(0,191,255,0.6)' },
       },
       {
         slotType: 'any', duration: 2.5, transition: 'flashBlack', effect: 'bounce', holdPoint: 'center',
@@ -957,6 +992,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
           { effect: 'colorGrade', intensity: 0.7, params: { preset: 'bleach-bypass' } },
           { effect: 'bloom', intensity: 0.3 },
         ],
+        textOverlay: { text: 'VOLTAGE', position: 'center', fontSize: 'xl', fontWeight: 'black', animation: 'scale-pop', color: '#fff' },
       },
       {
         slotType: 'any', duration: 2.5, transition: 'glitchBlocks', effect: 'orbit', holdPoint: 'center',
@@ -974,6 +1010,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
           { effect: 'colorGrade', intensity: 0.7, params: { preset: 'bleach-bypass' } },
           { effect: 'motionBlur', intensity: 0.3 },
         ],
+        textOverlay: { text: 'SURGE', position: 'center', fontSize: 'lg', fontWeight: 'black', animation: 'glitch-in', color: '#00BFFF' },
       },
       {
         slotType: 'any', duration: 3, transition: 'flashWhite', effect: 'pulse-zoom', holdPoint: 'rule-of-thirds',
@@ -1051,6 +1088,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
           { effect: 'lensFlare', intensity: 0.25 },
           { effect: 'bloom', intensity: 0.25 },
         ],
+        textOverlay: { text: 'timeless', position: 'center', fontSize: 'lg', fontWeight: 'normal', animation: 'fade-in', color: '#FFF5E6' },
       },
       {
         slotType: 'any', duration: 4.5, transition: 'morphDissolve', effect: 'ken-burns', holdPoint: 'face',
@@ -1070,6 +1108,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
           { effect: 'lensFlare', intensity: 0.3 },
           { effect: 'bloom', intensity: 0.25 },
         ],
+        textOverlay: { text: 'in this light', position: 'bottom', fontSize: 'md', fontWeight: 'normal', animation: 'slide-up', color: 'rgba(255,245,230,0.8)' },
       },
       {
         slotType: 'any', duration: 3.5, transition: 'fade', effect: 'crane-down', holdPoint: 'face',
@@ -1088,6 +1127,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
           { effect: 'lensFlare', intensity: 0.3 },
           { effect: 'vignette', intensity: 0.3 },
         ],
+        textOverlay: { text: 'pure magic', position: 'center', fontSize: 'md', fontWeight: 'normal', animation: 'fade-in', color: '#FFF5E6' },
       },
       {
         slotType: 'any', duration: 4, transition: 'fade', effect: 'slow-zoom', holdPoint: 'center',
@@ -1156,6 +1196,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
           { effect: 'bloom', intensity: 0.35 },
           { effect: 'chromaticAberration', intensity: 0.2 },
         ],
+        textOverlay: { text: 'AFTER DARK', position: 'center', fontSize: 'lg', fontWeight: 'black', animation: 'glitch-in', color: '#BF00FF', glowColor: 'rgba(191,0,255,0.6)' },
       },
       {
         slotType: 'any', duration: 2.5, transition: 'rgbSplitWipe', effect: 'bounce', holdPoint: 'rule-of-thirds',
@@ -1173,6 +1214,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
           { effect: 'bloom', intensity: 0.3 },
           { effect: 'scanlines', intensity: 0.2 },
         ],
+        textOverlay: { text: 'CITY LIGHTS', position: 'bottom', fontSize: 'md', fontWeight: 'bold', animation: 'slide-up', color: '#D8B4FE' },
       },
       {
         slotType: 'any', duration: 2, transition: 'flipCard', effect: 'dolly-in', holdPoint: 'center',
@@ -1189,6 +1231,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
           { effect: 'colorGrade', intensity: 0.7, params: { preset: 'neon-night' } },
           { effect: 'motionBlur', intensity: 0.3 },
         ],
+        textOverlay: { text: 'MIDNIGHT RUN', position: 'center', fontSize: 'lg', fontWeight: 'black', animation: 'scale-pop', color: '#BF00FF', glowColor: 'rgba(191,0,255,0.5)' },
       },
       {
         slotType: 'any', duration: 2.5, transition: 'pixelateCrossfade', effect: 'pixelate-reveal', holdPoint: 'center',
@@ -1206,6 +1249,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
           { effect: 'colorGrade', intensity: 0.7, params: { preset: 'neon-night' } },
           { effect: 'bloom', intensity: 0.4 },
         ],
+        textOverlay: { text: 'NEON GLOW', position: 'center', fontSize: 'md', fontWeight: 'bold', animation: 'glitch-in', color: '#D8B4FE' },
       },
       {
         slotType: 'any', duration: 2.5, transition: 'fade', effect: 'dolly-out', holdPoint: 'center',

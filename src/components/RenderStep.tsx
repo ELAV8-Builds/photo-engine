@@ -52,6 +52,8 @@ export default function RenderStep(props: RenderStepProps) {
   const previewEngineRef = useRef<EffectsEngine | null>(null);
   const previewAnimRef = useRef<number>(0);
   const previewImagesRef = useRef<Map<string, HTMLImageElement>>(new Map());
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
+  const [audioPlaying, setAudioPlaying] = useState(false);
 
   const selectedMedia = useMemo(() => photos.filter(p => p.selected), [photos]);
   const template = SMART_TEMPLATES.find(t => t.id === selectedTemplate) || null;
@@ -156,6 +158,24 @@ export default function RenderStep(props: RenderStepProps) {
 
     let cleanupAnim: (() => void) | undefined;
 
+    // Start audio playback for preview
+    if (music?.url) {
+      try {
+        // Clean up any previous audio
+        if (previewAudioRef.current) {
+          previewAudioRef.current.pause();
+          previewAudioRef.current = null;
+        }
+        const audio = new Audio(music.url);
+        audio.loop = true;
+        audio.volume = 0.6;
+        previewAudioRef.current = audio;
+        // Don't auto-play — wait for user interaction (browser autoplay policy)
+      } catch {
+        // Audio may fail silently — that's OK
+      }
+    }
+
     // Load images
     template.slots.forEach((_, i) => {
       const mid = slotAssignments[i] || '';
@@ -199,9 +219,14 @@ export default function RenderStep(props: RenderStepProps) {
     return () => {
       if (cleanupAnim) cleanupAnim();
       cancelAnimationFrame(previewAnimRef.current);
+      if (previewAudioRef.current) {
+        previewAudioRef.current.pause();
+        previewAudioRef.current = null;
+        setAudioPlaying(false);
+      }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [template?.id, selectedMedia.length, slotAssignments.join(','), JSON.stringify(mixerOverrides)]);
+  }, [template?.id, selectedMedia.length, slotAssignments.join(','), JSON.stringify(mixerOverrides), music?.url]);
 
   const currentSlot = template?.slots[previewSlotIndex] ?? null;
   const currentMedia = mediaById.get(slotAssignments[previewSlotIndex] || '');
@@ -490,6 +515,37 @@ export default function RenderStep(props: RenderStepProps) {
             </div>
           )}
 
+          {/* Audio play/pause button */}
+          {music && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                const audio = previewAudioRef.current;
+                if (!audio) return;
+                if (audioPlaying) {
+                  audio.pause();
+                  setAudioPlaying(false);
+                } else {
+                  audio.play().then(() => setAudioPlaying(true)).catch(() => {});
+                }
+              }}
+              className="absolute bottom-16 right-3 w-10 h-10 rounded-full bg-black/60 backdrop-blur-sm border border-white/20 flex items-center justify-center hover:bg-black/80 hover:border-accent-gold/40 transition-all z-10"
+              aria-label={audioPlaying ? 'Pause music' : 'Play music'}
+              title={audioPlaying ? 'Pause music' : 'Play music'}
+            >
+              {audioPlaying ? (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
+                  <rect x="6" y="4" width="4" height="16" rx="1" />
+                  <rect x="14" y="4" width="4" height="16" rx="1" />
+                </svg>
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                  <path d="M9 18V5l12 7z" fill="white" />
+                </svg>
+              )}
+            </button>
+          )}
+
           {/* Overlay info */}
           <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent p-4">
             <div className="flex items-end justify-between">
@@ -497,7 +553,7 @@ export default function RenderStep(props: RenderStepProps) {
                 <p className="text-xs text-accent-gold font-mono">{template?.name || 'No template'}</p>
                 <p className="text-[10px] text-text-muted">
                   {selectedMedia.length} media &bull; {template ? formatDuration(template.totalDuration) : '0s'}
-                  {music ? ` \u2022 ${music.name}` : ' \u2022 No music'}
+                  {music ? ` \u2022 \u266B ${music.name}` : ' \u2022 No music'}
                 </p>
               </div>
               <div className="text-right">
@@ -549,22 +605,26 @@ export default function RenderStep(props: RenderStepProps) {
           {currentSlot?.textOverlay && textOverrides[previewSlotIndex] !== null && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <p
-                className="font-bold text-center px-4"
+                className="text-center px-6 max-w-[90%] leading-tight"
                 style={{
                   color: currentSlot.textOverlay.color,
-                  fontSize: currentSlot.textOverlay.fontSize === 'xl' ? '2rem'
-                    : currentSlot.textOverlay.fontSize === 'lg' ? '1.5rem'
-                    : currentSlot.textOverlay.fontSize === 'md' ? '1rem'
-                    : '0.75rem',
+                  fontSize: currentSlot.textOverlay.fontSize === 'xl' ? 'clamp(1.8rem, 5vw, 3.5rem)'
+                    : currentSlot.textOverlay.fontSize === 'lg' ? 'clamp(1.4rem, 4vw, 2.5rem)'
+                    : currentSlot.textOverlay.fontSize === 'md' ? 'clamp(1rem, 3vw, 1.8rem)'
+                    : 'clamp(0.8rem, 2vw, 1.2rem)',
+                  fontWeight: currentSlot.textOverlay.fontWeight === 'black' ? 900
+                    : currentSlot.textOverlay.fontWeight === 'bold' ? 700 : 400,
                   textShadow: currentSlot.textOverlay.glowColor
-                    ? `0 0 15px ${currentSlot.textOverlay.glowColor}`
-                    : '0 2px 8px rgba(0,0,0,0.8)',
+                    ? `0 0 20px ${currentSlot.textOverlay.glowColor}, 0 0 40px ${currentSlot.textOverlay.glowColor}, 0 2px 10px rgba(0,0,0,0.8)`
+                    : '0 2px 4px rgba(0,0,0,0.9), 0 4px 12px rgba(0,0,0,0.6)',
                   position: 'absolute',
                   top: currentSlot.textOverlay.position === 'top' ? '15%'
-                    : currentSlot.textOverlay.position === 'bottom' ? '85%'
+                    : currentSlot.textOverlay.position === 'bottom' ? '80%'
                     : '50%',
                   left: '50%',
                   transform: 'translate(-50%, -50%)',
+                  letterSpacing: currentSlot.textOverlay.fontWeight === 'black' ? '0.05em' : '0.02em',
+                  textTransform: currentSlot.textOverlay.fontWeight === 'black' ? 'uppercase' as const : 'none' as const,
                 }}
               >
                 {typeof textOverrides[previewSlotIndex] === 'string'
