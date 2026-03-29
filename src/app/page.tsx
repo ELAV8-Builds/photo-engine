@@ -9,7 +9,7 @@ import MusicStep from '@/components/MusicStep';
 import RenderStep from '@/components/RenderStep';
 import { MediaFile, MusicTrack, Step } from '@/types';
 import { loadProject, saveProject, updateProject } from '@/lib/project-manager';
-import { SMART_TEMPLATES } from '@/lib/templates';
+import { SMART_TEMPLATES, expandTemplateForMedia } from '@/lib/templates';
 import type { MixerOverrides } from '@/components/TemplateMixer';
 
 function HomeContent() {
@@ -49,6 +49,8 @@ function HomeContent() {
         setMedia(data.media);
         setSelectedTemplate(data.templateId);
         setMusic(data.music);
+        // Restore musicTracks from saved music (so playlist shows the track)
+        setMusicTracks(data.music ? [data.music] : []);
         setTitle(data.title);
         setAspectRatio(data.aspectRatio);
         setOutputQuality(data.outputQuality);
@@ -86,7 +88,10 @@ function HomeContent() {
     setSaveStatus('saving');
     try {
       const selectedMedia = media.filter((m) => m.selected);
-      const template = selectedTemplate ? SMART_TEMPLATES.find((t) => t.id === selectedTemplate) : null;
+      const baseTemplate = selectedTemplate ? SMART_TEMPLATES.find((t) => t.id === selectedTemplate) : null;
+      // Use expanded template duration (accounts for 60+ photos and song-length fitting)
+      const targetDuration = music?.duration && music.duration > 0 ? music.duration : undefined;
+      const template = baseTemplate ? expandTemplateForMedia(baseTemplate, selectedMedia.length, targetDuration) : null;
       const totalDuration = template
         ? template.totalDuration
         : selectedMedia.length * 3.5;

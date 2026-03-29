@@ -82,6 +82,8 @@ export default function MusicStep({
   const handleFileUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
 
+    // Build all new tracks first, then update state once to avoid stale closure
+    const newTracks: MusicTrack[] = [];
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       if (!file.type.startsWith('audio/')) continue;
@@ -89,7 +91,7 @@ export default function MusicStep({
       const url = URL.createObjectURL(file);
       const duration = await getAudioDuration(url);
 
-      await addTrack({
+      newTracks.push({
         id: `music-${Date.now()}-${i}`,
         name: file.name,
         file,
@@ -98,6 +100,25 @@ export default function MusicStep({
         source: 'upload',
       });
     }
+
+    if (newTracks.length === 0) return;
+
+    // Single state update with all new tracks appended
+    updateTracks([...musicTracks, ...newTracks]);
+
+    // Auto-save each to library (non-blocking)
+    for (const track of newTracks) {
+      try {
+        const exists = await songExists(track.name);
+        if (!exists) {
+          await saveSongFromTrack(track);
+        }
+      } catch (err) {
+        console.warn('[MusicStep] Auto-save failed:', err);
+      }
+    }
+    // Refresh library count once
+    getSongCount().then(setLibrarySongCount).catch(() => {});
   };
 
   const handleYoutubeRip = async () => {

@@ -60,7 +60,6 @@ export default function RenderStep(props: RenderStepProps) {
   const previewImagesRef = useRef<Map<string, HTMLImageElement>>(new Map());
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const [audioPlaying, setAudioPlaying] = useState(false);
-  const [audioReady, setAudioReady] = useState(false);
   const hasUserInteracted = useRef(false);
 
   const selectedMedia = useMemo(() => photos.filter(p => p.selected), [photos]);
@@ -190,7 +189,6 @@ export default function RenderStep(props: RenderStepProps) {
 
         // Set up event listeners before setting src
         audio.addEventListener('canplaythrough', () => {
-          setAudioReady(true);
           // Try auto-play (works if user has already interacted with the page)
           audio.play()
             .then(() => setAudioPlaying(true))
@@ -202,7 +200,6 @@ export default function RenderStep(props: RenderStepProps) {
 
         audio.addEventListener('error', (e) => {
           console.warn('[Audio] Failed to load audio:', e);
-          setAudioReady(false);
         });
 
         // If music has a File object, create a fresh blob URL from it for reliability
@@ -269,7 +266,6 @@ export default function RenderStep(props: RenderStepProps) {
         previewAudioRef.current.src = '';
         previewAudioRef.current = null;
         setAudioPlaying(false);
-        setAudioReady(false);
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
