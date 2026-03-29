@@ -8,22 +8,51 @@ const execAsync = promisify(exec);
 
 const AUDIO_DIR = path.join(process.cwd(), 'public', 'audio');
 
+const YT_DLP_PATHS = [
+  '/Users/beaubratton/Library/Python/3.11/bin/yt-dlp',
+  '/Library/Frameworks/Python.framework/Versions/3.11/bin/yt-dlp',
+  '/opt/homebrew/bin/yt-dlp',
+  '/usr/local/bin/yt-dlp',
+  'yt-dlp',
+];
+
+function findYtDlp(): string {
+  for (const p of YT_DLP_PATHS) {
+    if (p === 'yt-dlp') return p;
+    if (fs.existsSync(p)) return p;
+  }
+  return 'yt-dlp';
+}
+
+function stripPlaylistParams(url: string): string {
+  try {
+    const parsed = new URL(url);
+    parsed.searchParams.delete('list');
+    parsed.searchParams.delete('index');
+    parsed.searchParams.delete('start_radio');
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const url = body?.url;
+    const rawUrl = body?.url;
 
-    if (typeof url !== 'string' || !url.trim()) {
+    if (typeof rawUrl !== 'string' || !rawUrl.trim()) {
       return NextResponse.json({ error: 'Missing YouTube URL' }, { status: 400 });
     }
 
-    // Validate URL pattern
     const ytRegex = /^(https?:\/\/)?(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)/;
-    if (!ytRegex.test(url)) {
+    if (!ytRegex.test(rawUrl)) {
       return NextResponse.json({ error: 'Invalid YouTube URL' }, { status: 400 });
     }
 
-    // Ensure audio directory exists
+    const url = stripPlaylistParams(rawUrl);
+    const ytdlp = findYtDlp();
+
     if (!fs.existsSync(AUDIO_DIR)) {
       fs.mkdirSync(AUDIO_DIR, { recursive: true });
     }
@@ -31,9 +60,8 @@ export async function POST(req: NextRequest) {
     const outputId = `yt-${Date.now()}`;
     const outputPath = path.join(AUDIO_DIR, `${outputId}.mp3`);
 
-    // Get video info first
     const { stdout: infoJson } = await execAsync(
-      `yt-dlp --dump-json --no-download "${url}"`,
+      `"${ytdlp}" --no-playlist --no-warnings --dump-json --no-download "${url}"`,
       { timeout: 30000 }
     );
 
@@ -47,13 +75,11 @@ export async function POST(req: NextRequest) {
       // Parse failed, continue with defaults
     }
 
-    // Download audio only as MP3
     await execAsync(
-      `yt-dlp -x --audio-format mp3 --audio-quality 192K -o "${outputPath}" "${url}"`,
+      `"${ytdlp}" --no-playlist --no-warnings -x --audio-format mp3 --audio-quality 192K -o "${outputPath}" "${url}"`,
       { timeout: 120000 }
     );
 
-    // Verify file exists
     if (!fs.existsSync(outputPath)) {
       return NextResponse.json({ error: 'Audio extraction failed — file not created' }, { status: 500 });
     }
