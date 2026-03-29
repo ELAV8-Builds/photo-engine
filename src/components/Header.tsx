@@ -3,7 +3,7 @@
 import { Step } from '@/types';
 
 const STEPS: { id: Step; label: string; num: number }[] = [
-  { id: 'photos', label: 'Photos', num: 1 },
+  { id: 'media', label: 'Media', num: 1 },
   { id: 'template', label: 'Template', num: 2 },
   { id: 'music', label: 'Music', num: 3 },
   { id: 'render', label: 'Export', num: 4 },

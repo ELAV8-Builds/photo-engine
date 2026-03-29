@@ -1,14 +1,13 @@
 'use client';
 
-import { TEMPLATES } from '@/lib/templates';
-import { PhotoFile } from '@/types';
+import { useState, useEffect, useMemo } from 'react';
+import { SMART_TEMPLATES, assignMediaToSlots, formatDuration } from '@/lib/templates';
+import { MediaFile, SmartTemplate } from '@/types';
 
 interface TemplateStepProps {
   selectedTemplate: string | null;
   onSelectTemplate: (id: string) => void;
-  photos: PhotoFile[];
-  durationPerPhoto: number;
-  onDurationChange: (d: number) => void;
+  media: MediaFile[];
   aspectRatio: '16:9' | '9:16' | '1:1';
   onAspectChange: (a: '16:9' | '9:16' | '1:1') => void;
   onNext: () => void;
@@ -16,166 +15,405 @@ interface TemplateStepProps {
 }
 
 const ASPECT_OPTIONS: { value: '16:9' | '9:16' | '1:1'; label: string; icon: string }[] = [
-  { value: '16:9', label: 'Landscape', icon: '▬' },
-  { value: '9:16', label: 'Portrait', icon: '▮' },
-  { value: '1:1', label: 'Square', icon: '■' },
+  { value: '16:9', label: 'Landscape', icon: '\u25AC' },
+  { value: '9:16', label: 'Portrait', icon: '\u25AE' },
+  { value: '1:1', label: 'Square', icon: '\u25A0' },
 ];
 
+function getSlotTypeColor(slotType: 'photo' | 'video' | 'any'): string {
+  switch (slotType) {
+    case 'photo': return '#FFD700';
+    case 'video': return '#60A5FA';
+    case 'any': return 'linear-gradient(135deg, #FFD700, #60A5FA)';
+  }
+}
+
+function getSlotTypeBg(slotType: 'photo' | 'video' | 'any'): string {
+  switch (slotType) {
+    case 'photo': return 'rgba(255, 215, 0, 0.15)';
+    case 'video': return 'rgba(96, 165, 250, 0.15)';
+    case 'any': return 'rgba(255, 215, 0, 0.1)';
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Animated Preview for a single template card                       */
+/* ------------------------------------------------------------------ */
+function AnimatedPreview({
+  template,
+  media,
+}: {
+  template: SmartTemplate;
+  media: MediaFile[];
+}) {
+  const [previewSlotIndex, setPreviewSlotIndex] = useState(0);
+  const [fade, setFade] = useState(true);
+
+  const selectedMedia = media.filter((m) => m.selected);
+  const mediaIds = selectedMedia.map((m) => m.id);
+  const slotAssignments = assignMediaToSlots(template, mediaIds);
+
+  // Map id back to media object for display
+  const mediaById = useMemo(() => {
+    const map = new Map<string, MediaFile>();
+    selectedMedia.forEach((m) => map.set(m.id, m));
+    return map;
+  }, [selectedMedia]);
+
+  // Cycle through slots at the pace of each slot's duration
+  useEffect(() => {
+    if (selectedMedia.length === 0) return;
+
+    const slot = template.slots[previewSlotIndex];
+    if (!slot) return;
+
+    // Use slot duration in ms, clamped to at least 600ms for UX
+    const durationMs = Math.max(slot.duration * 1000, 600);
+
+    // Start fade-out 300ms before switch
+    const fadeOutTimer = setTimeout(() => setFade(false), durationMs - 300);
+    const advanceTimer = setTimeout(() => {
+      setPreviewSlotIndex((prev) => (prev + 1) % template.slots.length);
+      setFade(true);
+    }, durationMs);
+
+    return () => {
+      clearTimeout(fadeOutTimer);
+      clearTimeout(advanceTimer);
+    };
+  }, [previewSlotIndex, template.slots, selectedMedia.length]);
+
+  // Get current display media
+  const currentMediaId = slotAssignments[previewSlotIndex] || '';
+  const currentMedia = mediaById.get(currentMediaId);
+
+  const imgSrc = currentMedia
+    ? currentMedia.type === 'video'
+      ? currentMedia.thumbnailUrl || currentMedia.url
+      : currentMedia.url
+    : null;
+
+  return (
+    <div className="absolute inset-0">
+      {imgSrc ? (
+        <img
+          src={imgSrc}
+          alt=""
+          className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300"
+          style={{
+            opacity: fade ? 1 : 0,
+            filter:
+              template.style === 'retro'
+                ? 'saturate(0.6) contrast(1.2) sepia(0.3)'
+                : template.style === 'glitch'
+                ? 'hue-rotate(10deg) contrast(1.1)'
+                : undefined,
+          }}
+        />
+      ) : (
+        <div className="flex-1 h-full bg-gradient-to-br from-bg-hover to-bg-card flex items-center justify-center">
+          <span className="text-text-muted text-xs">No media selected</span>
+        </div>
+      )}
+
+      {/* Slot index indicator dots */}
+      {selectedMedia.length > 0 && (
+        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
+          {template.slots.slice(0, 8).map((_, i) => (
+            <div
+              key={i}
+              className="w-1.5 h-1.5 rounded-full transition-all duration-200"
+              style={{
+                background: i === previewSlotIndex ? template.color : 'rgba(255,255,255,0.3)',
+                transform: i === previewSlotIndex ? 'scale(1.4)' : 'scale(1)',
+              }}
+            />
+          ))}
+          {template.slots.length > 8 && (
+            <span className="text-[8px] text-white/50 ml-0.5">+{template.slots.length - 8}</span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Timeline Visualization                                            */
+/* ------------------------------------------------------------------ */
+function TimelineVisualization({
+  template,
+  media,
+}: {
+  template: SmartTemplate;
+  media: MediaFile[];
+}) {
+  const selectedMedia = media.filter((m) => m.selected);
+  const mediaIds = selectedMedia.map((m) => m.id);
+  const slotAssignments = assignMediaToSlots(template, mediaIds);
+
+  const mediaById = useMemo(() => {
+    const map = new Map<string, MediaFile>();
+    selectedMedia.forEach((m) => map.set(m.id, m));
+    return map;
+  }, [selectedMedia]);
+
+  const mediaCountDiff = selectedMedia.length - template.slots.length;
+
+  return (
+    <div className="card-glow p-5">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-bold text-white">Timeline</h3>
+        <span className="text-xs text-text-muted font-mono">
+          {formatDuration(template.totalDuration)} total
+        </span>
+      </div>
+
+      {/* Horizontal slot bar */}
+      <div className="flex rounded-lg overflow-hidden h-14 gap-px bg-black/20">
+        {template.slots.map((slot, i) => {
+          const widthPercent = (slot.duration / template.totalDuration) * 100;
+          const assignedMedia = mediaById.get(slotAssignments[i] || '');
+          const thumbSrc = assignedMedia
+            ? assignedMedia.type === 'video'
+              ? assignedMedia.thumbnailUrl || assignedMedia.url
+              : assignedMedia.url
+            : null;
+
+          return (
+            <div
+              key={i}
+              className="relative flex flex-col items-center justify-end overflow-hidden group"
+              style={{
+                width: `${widthPercent}%`,
+                minWidth: '28px',
+                background: getSlotTypeBg(slot.slotType),
+              }}
+              title={`Slot ${i + 1}: ${slot.duration}s | ${slot.transition} | ${slot.effect}`}
+            >
+              {/* Thumbnail background */}
+              {thumbSrc && (
+                <img
+                  src={thumbSrc}
+                  alt=""
+                  className="absolute inset-0 w-full h-full object-cover opacity-30"
+                />
+              )}
+
+              {/* Color top bar */}
+              <div
+                className="absolute top-0 left-0 right-0 h-1"
+                style={{
+                  background: getSlotTypeColor(slot.slotType),
+                }}
+              />
+
+              {/* Slot info overlay */}
+              <div className="relative z-10 text-center pb-1 px-0.5">
+                <span className="text-[9px] font-mono text-white/80 block leading-tight">
+                  {slot.duration}s
+                </span>
+                <span className="text-[8px] text-text-muted block leading-tight truncate">
+                  {slot.transition}
+                </span>
+                <span className="text-[7px] text-text-muted/60 block leading-tight truncate">
+                  {slot.effect}
+                </span>
+              </div>
+
+              {/* Hover tooltip */}
+              <div className="absolute -top-12 left-1/2 -translate-x-1/2 bg-bg-card border border-border-subtle rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 whitespace-nowrap">
+                <p className="text-[10px] text-white font-medium">Slot {i + 1}</p>
+                <p className="text-[9px] text-text-muted">
+                  {slot.duration}s &middot; {slot.transition} &middot; {slot.effect}
+                </p>
+                {assignedMedia && (
+                  <p className="text-[9px] text-accent-gold truncate max-w-[120px]">
+                    {assignedMedia.name}
+                  </p>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Legend & media notes */}
+      <div className="flex items-center justify-between mt-3 flex-wrap gap-2">
+        <div className="flex items-center gap-3 text-[10px] text-text-muted">
+          <span className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-sm inline-block" style={{ background: '#FFD700' }} />
+            Photo
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-sm inline-block" style={{ background: '#60A5FA' }} />
+            Video
+          </span>
+          <span className="flex items-center gap-1">
+            <span
+              className="w-2 h-2 rounded-sm inline-block"
+              style={{ background: 'linear-gradient(135deg, #FFD700, #60A5FA)' }}
+            />
+            Any
+          </span>
+        </div>
+
+        {mediaCountDiff < 0 && (
+          <span className="text-[10px] text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded">
+            Media will repeat to fill {Math.abs(mediaCountDiff)} extra slot{Math.abs(mediaCountDiff) !== 1 ? 's' : ''}
+          </span>
+        )}
+        {mediaCountDiff > 0 && (
+          <span className="text-[10px] text-blue-400 bg-blue-400/10 px-2 py-0.5 rounded">
+            {mediaCountDiff} item{mediaCountDiff !== 1 ? 's' : ''} won&apos;t be used
+          </span>
+        )}
+        {mediaCountDiff === 0 && selectedMedia.length > 0 && (
+          <span className="text-[10px] text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded">
+            Perfect fit
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Main Component                                                     */
+/* ------------------------------------------------------------------ */
 export default function TemplateStep({
   selectedTemplate,
   onSelectTemplate,
-  photos,
-  durationPerPhoto,
-  onDurationChange,
+  media,
   aspectRatio,
   onAspectChange,
   onNext,
   onBack,
 }: TemplateStepProps) {
-  const selectedPhotos = photos.filter(p => p.selected);
-  const totalDuration = selectedPhotos.length * durationPerPhoto;
-  const minutes = Math.floor(totalDuration / 60);
-  const seconds = Math.round(totalDuration % 60);
+  const selectedMedia = media.filter((m) => m.selected);
+  const activeTemplate = SMART_TEMPLATES.find((t) => t.id === selectedTemplate) || null;
 
   return (
     <div className="space-y-6">
-      {/* Templates Grid */}
+      {/* Header */}
       <div>
-        <h2 className="text-lg font-bold text-white mb-1">Choose a Style</h2>
+        <h2 className="text-lg font-bold text-white mb-1">Choose a Template</h2>
         <p className="text-sm text-text-muted mb-4">
-          {selectedPhotos.length} photos selected — estimated {minutes > 0 ? `${minutes}m ` : ''}{seconds}s
+          {selectedMedia.length} media selected &mdash; pick a style to shape your video
         </p>
+      </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {TEMPLATES.map((template) => (
+      {/* Templates Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {SMART_TEMPLATES.map((template) => {
+          const isSelected = selectedTemplate === template.id;
+          return (
             <button
               key={template.id}
               onClick={() => onSelectTemplate(template.id)}
-              className={`template-card text-left transition-all ${
-                selectedTemplate === template.id ? 'selected' : ''
-              }`}
-              aria-pressed={selectedTemplate === template.id}
+              className={`template-card text-left transition-all ${isSelected ? 'selected' : ''}`}
+              style={
+                isSelected
+                  ? {
+                      borderColor: 'rgba(255, 215, 0, 0.4)',
+                      boxShadow: '0 0 20px rgba(255, 215, 0, 0.15)',
+                    }
+                  : undefined
+              }
+              aria-pressed={isSelected}
             >
-              {/* Template preview */}
-              <div className="relative h-32 rounded-lg overflow-hidden mb-3 bg-bg-main">
-                {/* Preview using actual photos */}
-                <div className="absolute inset-0 flex">
-                  {selectedPhotos.slice(0, 3).map((photo, i) => (
-                    <div
-                      key={photo.id}
-                      className="flex-1 relative overflow-hidden"
-                      style={{
-                        transform: template.style === 'cinematic'
-                          ? `scale(1.1) translateX(${(i - 1) * 5}%)`
-                          : template.style === 'dynamic'
-                          ? `rotate(${(i - 1) * 3}deg)`
-                          : template.style === 'parallax'
-                          ? `perspective(500px) rotateY(${(i - 1) * 8}deg)`
-                          : undefined,
-                        transition: 'transform 0.3s ease',
-                      }}
-                    >
-                      <img
-                        src={photo.url}
-                        alt=""
-                        className="absolute inset-0 w-full h-full object-cover"
-                        style={{
-                          filter: template.style === 'retro'
-                            ? 'saturate(0.6) contrast(1.2) sepia(0.3)'
-                            : template.style === 'glitch'
-                            ? 'hue-rotate(10deg) contrast(1.1)'
-                            : undefined,
-                        }}
-                      />
-                    </div>
-                  ))}
-                  {selectedPhotos.length === 0 && (
-                    <div className="flex-1 bg-gradient-to-br from-bg-hover to-bg-card flex items-center justify-center">
-                      <span className="text-text-muted text-xs">No photos</span>
-                    </div>
-                  )}
-                </div>
+              {/* Animated preview area */}
+              <div className="relative h-36 rounded-lg overflow-hidden mb-3 bg-bg-main">
+                <AnimatedPreview template={template} media={media} />
 
-                {/* Style overlay */}
+                {/* Style overlay: Retro scanlines */}
                 {template.style === 'retro' && (
-                  <div className="absolute inset-0 pointer-events-none" style={{
-                    background: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.1) 2px, rgba(0,0,0,0.1) 4px)',
-                  }} />
-                )}
-                {template.style === 'glitch' && (
-                  <div className="absolute inset-0 pointer-events-none mix-blend-screen" style={{
-                    background: 'linear-gradient(transparent 50%, rgba(0,255,255,0.03) 50%)',
-                    backgroundSize: '100% 4px',
-                  }} />
+                  <div
+                    className="absolute inset-0 pointer-events-none"
+                    style={{
+                      background:
+                        'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.15) 2px, rgba(0,0,0,0.15) 4px)',
+                    }}
+                  />
                 )}
 
-                {/* Color accent bar */}
+                {/* Style overlay: Glitch CRT lines */}
+                {template.style === 'glitch' && (
+                  <div
+                    className="absolute inset-0 pointer-events-none mix-blend-screen"
+                    style={{
+                      background: 'linear-gradient(transparent 50%, rgba(0,255,255,0.04) 50%)',
+                      backgroundSize: '100% 4px',
+                    }}
+                  />
+                )}
+
+                {/* Color accent bar at bottom of preview */}
                 <div
                   className="absolute bottom-0 left-0 right-0 h-1"
                   style={{ background: template.color }}
                 />
+
+                {/* Selected checkmark */}
+                {isSelected && (
+                  <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-accent-gold flex items-center justify-center">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#000" strokeWidth="3">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  </div>
+                )}
               </div>
 
+              {/* Template info */}
               <div className="flex items-start justify-between gap-2">
-                <div>
+                <div className="min-w-0">
                   <h3 className="font-bold text-white text-sm">{template.name}</h3>
-                  <p className="text-xs text-text-muted mt-0.5 line-clamp-2">{template.description}</p>
+                  <p className="text-xs text-text-muted mt-0.5 line-clamp-2">
+                    {template.description}
+                  </p>
                 </div>
-                <span className="text-[10px] font-mono text-text-muted whitespace-nowrap">
-                  {template.durationPerPhoto}s/photo
-                </span>
+                <div className="text-right shrink-0">
+                  <span className="text-[10px] font-mono text-accent-gold block">
+                    {formatDuration(template.totalDuration)}
+                  </span>
+                  <span className="text-[10px] font-mono text-text-muted block">
+                    {template.mediaCount} items
+                  </span>
+                </div>
               </div>
             </button>
-          ))}
-        </div>
+          );
+        })}
       </div>
 
-      {/* Settings */}
-      <div className="card-glow p-6">
-        <h3 className="text-sm font-bold text-text-muted uppercase tracking-wider mb-4">Settings</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-          {/* Duration per photo */}
-          <div>
-            <label htmlFor="duration" className="text-xs text-text-muted block mb-2">
-              Duration per Photo: <span className="text-accent-gold font-mono">{durationPerPhoto}s</span>
-            </label>
-            <input
-              id="duration"
-              type="range"
-              min="1"
-              max="8"
-              step="0.5"
-              value={durationPerPhoto}
-              onChange={(e) => onDurationChange(parseFloat(e.target.value))}
-              className="w-full accent-accent-gold"
-            />
-            <div className="flex justify-between text-[10px] text-text-muted mt-1">
-              <span>1s (fast)</span>
-              <span>8s (slow)</span>
-            </div>
-          </div>
+      {/* Timeline Visualization (shown when a template is selected) */}
+      {activeTemplate && (
+        <TimelineVisualization template={activeTemplate} media={media} />
+      )}
 
-          {/* Aspect ratio */}
-          <div>
-            <p className="text-xs text-text-muted mb-2">Aspect Ratio</p>
-            <div className="flex gap-2">
-              {ASPECT_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  onClick={() => onAspectChange(opt.value)}
-                  className={`flex-1 py-2 rounded-lg text-xs font-medium transition-all border ${
-                    aspectRatio === opt.value
-                      ? 'bg-accent-gold/10 border-accent-gold/40 text-accent-gold'
-                      : 'bg-bg-input border-border-subtle text-text-muted hover:text-white'
-                  }`}
-                  aria-pressed={aspectRatio === opt.value}
-                >
-                  <span className="block text-lg mb-0.5" aria-hidden="true">{opt.icon}</span>
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
+      {/* Aspect Ratio */}
+      <div className="card-glow p-5">
+        <h3 className="text-sm font-bold text-text-muted uppercase tracking-wider mb-3">
+          Aspect Ratio
+        </h3>
+        <div className="flex gap-2">
+          {ASPECT_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => onAspectChange(opt.value)}
+              className={`flex-1 py-2 rounded-lg text-xs font-medium transition-all border ${
+                aspectRatio === opt.value
+                  ? 'bg-accent-gold/10 border-accent-gold/40 text-accent-gold'
+                  : 'bg-bg-input border-border-subtle text-text-muted hover:text-white'
+              }`}
+              aria-pressed={aspectRatio === opt.value}
+            >
+              <span className="block text-lg mb-0.5" aria-hidden="true">
+                {opt.icon}
+              </span>
+              {opt.label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -190,7 +428,14 @@ export default function TemplateStep({
           className="btn-gold inline-flex items-center gap-2"
         >
           Add Music
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
             <line x1="5" y1="12" x2="19" y2="12" />
             <polyline points="12 5 19 12 12 19" />
           </svg>

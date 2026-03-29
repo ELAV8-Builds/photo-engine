@@ -1,4 +1,4 @@
-export interface PhotoFile {
+export interface MediaFile {
   id: string;
   file: File;
   url: string;
@@ -8,7 +8,14 @@ export interface PhotoFile {
   selected: boolean;
   faces: FaceRegion[];
   order: number;
+  type: 'photo' | 'video';
+  duration?: number;
+  trimStart?: number;
+  trimEnd?: number;
+  thumbnailUrl?: string;
 }
+
+export type PhotoFile = MediaFile;
 
 export interface FaceRegion {
   x: number;
@@ -27,6 +34,25 @@ export interface MusicTrack {
   source: 'upload' | 'youtube';
 }
 
+export interface TemplateSlot {
+  slotType: 'photo' | 'video' | 'any';
+  duration: number;
+  transition: 'fade' | 'slide-left' | 'slide-right' | 'zoom-in' | 'zoom-out' | 'glitch' | 'none';
+  effect: 'ken-burns' | 'parallax' | 'static' | 'slow-zoom' | 'pan-left' | 'pan-right' | 'bounce';
+  holdPoint: 'face' | 'center' | 'rule-of-thirds';
+}
+
+export interface SmartTemplate {
+  id: string;
+  name: string;
+  description: string;
+  style: 'cinematic' | 'dynamic' | 'minimal' | 'retro' | 'glitch' | 'parallax';
+  color: string;
+  totalDuration: number;
+  slots: TemplateSlot[];
+  mediaCount: number;
+}
+
 export interface Template {
   id: string;
   name: string;
@@ -36,17 +62,6 @@ export interface Template {
   transitionType: string;
   durationPerPhoto: number;
   color: string;
-}
-
-export interface ProjectState {
-  photos: PhotoFile[];
-  selectedTemplate: string | null;
-  music: MusicTrack | null;
-  title: string;
-  durationPerPhoto: number;
-  transitionDuration: number;
-  outputQuality: '720p' | '1080p' | '4k';
-  aspectRatio: '16:9' | '9:16' | '1:1';
 }
 
 export interface RenderProgress {
@@ -59,4 +74,4 @@ export interface RenderProgress {
   error?: string;
 }
 
-export type Step = 'photos' | 'template' | 'music' | 'render';
+export type Step = 'media' | 'template' | 'music' | 'render';
