@@ -86,9 +86,8 @@ export default function MediaStep({ media, onMediaChange, onNext }: MediaStepPro
               type: 'image/jpeg',
             });
           } catch {
-            // If HEIC conversion fails, try using original
             setProcessingMessage(`HEIC conversion failed for ${file.name}, skipping...`);
-            previewUrl = URL.createObjectURL(file);
+            continue;
           }
         } else {
           previewUrl = URL.createObjectURL(file);
