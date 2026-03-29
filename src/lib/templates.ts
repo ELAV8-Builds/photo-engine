@@ -1285,6 +1285,39 @@ export function assignMediaToSlots(
 }
 
 /**
+ * For split-screen slots, get all media IDs assigned to a given slot.
+ * Returns an array of media IDs — single slots return [id], multi-photo return [id1, id2, ...].
+ *
+ * The approach: a multi-photo slot (e.g., 4-grid) uses the primary assignment plus
+ * the next N-1 media from the pool, cycling through available media.
+ */
+export function getSlotMediaIds(
+  slotIndex: number,
+  template: SmartTemplate,
+  slotAssignments: string[],
+  allMediaIds: string[],
+): string[] {
+  const slot = template.slots[slotIndex];
+  const mediaCount = slot.mediaCount ?? 1;
+  const primaryId = slotAssignments[slotIndex] || '';
+
+  if (mediaCount <= 1 || allMediaIds.length === 0) {
+    return [primaryId];
+  }
+
+  // For multi-photo layouts, pick sequential media starting from the primary assignment
+  const primaryIndex = allMediaIds.indexOf(primaryId);
+  const ids: string[] = [];
+  for (let i = 0; i < mediaCount; i++) {
+    const idx = primaryIndex >= 0
+      ? (primaryIndex + i) % allMediaIds.length
+      : i % allMediaIds.length;
+    ids.push(allMediaIds[idx]);
+  }
+  return ids;
+}
+
+/**
  * Expand a template to accommodate more media than its base slot count.
  *
  * When the user has 60 photos but the template only has 8 slots, this
@@ -1326,6 +1359,65 @@ export function expandTemplateForMedia(
       }
     }
 
+    // Auto-inject split-screen layouts for variety when enough media exists
+    // ~every 6th slot gets a multi-photo layout (starting from slot 4)
+    if (mediaCount >= 8 && i >= 4 && i % 6 === 4) {
+      const layouts: Array<{ layout: import('@/types').SlotLayout; count: number }> = [
+        { layout: '2-up-h', count: 2 },
+        { layout: '4-grid', count: 4 },
+        { layout: '3-up', count: 3 },
+        { layout: '2-up-v', count: 2 },
+        { layout: 'pip', count: 2 },
+      ];
+      const pick = layouts[Math.floor(i / 6) % layouts.length];
+      clonedSlot.layout = pick.layout;
+      clonedSlot.mediaCount = pick.count;
+      // Split-screen slots look better with slightly longer duration
+      clonedSlot.duration = Math.max(clonedSlot.duration, 3);
+      // Remove text overlay from split-screen (too busy)
+      clonedSlot.textOverlay = undefined;
+    }
+
+    // Auto-inject transition overlays on ~every 5th slot for visual richness
+    // (only if the slot doesn't already have one)
+    if (!clonedSlot.transitionOverlay && i >= 2 && i % 5 === 2) {
+      const overlayIds = ['light-leak', 'flash-bang', 'film-burn', 'spark-shower', 'prism-split', 'radial-wipe', 'glitch-wave'];
+      const overlayIdx = Math.floor(i / 5) % overlayIds.length;
+      clonedSlot.transitionOverlay = {
+        id: overlayIds[overlayIdx],
+        opacity: 0.7,
+      };
+    }
+
+    // Aggressively assign speed presets to make templates more dynamic
+    // If a slot doesn't already have a speed preset, give it one based on position
+    if (!clonedSlot.speedPreset || clonedSlot.speedPreset === 'normal') {
+      const speedPresets = ['classic', 'dramatic', 'pulse', 'accelerate', 'decelerate'];
+      // Every 3rd slot gets a speed ramp (starting from slot 1)
+      if (i >= 1 && i % 3 === 1) {
+        clonedSlot.speedPreset = speedPresets[Math.floor(i / 3) % speedPresets.length];
+      }
+      // Hero slots (first and last) get dramatic ramping
+      if (i === 0) {
+        clonedSlot.speedPreset = 'dramatic';
+      }
+      if (i === mediaCount - 1) {
+        clonedSlot.speedPreset = 'decelerate';
+      }
+    }
+
+    // Inject depth-aware effects on some slots for face-centric photos
+    // These use focalX/focalY from face detection, so they look best on portraits
+    // Every 4th slot starting from slot 2 gets a depth effect (if not already split-screen)
+    if (!clonedSlot.layout || clonedSlot.layout === 'single') {
+      if (i >= 2 && i % 4 === 2) {
+        const depthEffects = ['parallax', 'depth-zoom', 'depth-float'];
+        clonedSlot.effect = depthEffects[Math.floor(i / 4) % depthEffects.length];
+        clonedSlot.holdPoint = 'face'; // Ensure face detection focal point is used
+        clonedSlot.motionIntensity = 0.7;
+      }
+    }
+
     expandedSlots.push(clonedSlot);
   }
 
@@ -1351,6 +1443,42 @@ export function expandTemplateForMedia(
     slots: expandedSlots,
     mediaCount,
     totalDuration: Math.round(newTotalDuration * 10) / 10,
+    // Default fade-out of 0.8s unless template explicitly sets it
+    fadeOutDuration: template.fadeOutDuration ?? 0.8,
+  };
+}
+
+/**
+ * Apply beat sync to a template — adjust slot durations to align transitions
+ * with detected beat positions in the audio.
+ *
+ * This is called AFTER expandTemplateForMedia, when beat detection has completed.
+ * It preserves all slot properties except duration.
+ */
+export function applyBeatSync(
+  template: SmartTemplate,
+  beatDurations: number[],
+): SmartTemplate {
+  if (beatDurations.length !== template.slots.length) {
+    console.warn('[BeatSync] Duration count mismatch, skipping');
+    return template;
+  }
+
+  const syncedSlots = template.slots.map((slot, i) => ({
+    ...slot,
+    duration: beatDurations[i],
+    // Deep-clone mutable fields
+    postEffects: slot.postEffects?.map(e => ({ ...e, params: e.params ? { ...e.params } : undefined })),
+    textOverlay: slot.textOverlay ? { ...slot.textOverlay } : undefined,
+    transitionOverlay: slot.transitionOverlay ? { ...slot.transitionOverlay } : undefined,
+  }));
+
+  const newTotalDuration = syncedSlots.reduce((sum, s) => sum + s.duration, 0);
+
+  return {
+    ...template,
+    slots: syncedSlots,
+    totalDuration: Math.round(newTotalDuration * 100) / 100,
   };
 }
 

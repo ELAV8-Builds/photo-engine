@@ -34,6 +34,9 @@ export interface MusicTrack {
   source: 'upload' | 'youtube';
 }
 
+/** Layout mode for a slot — how many media items appear simultaneously */
+export type SlotLayout = 'single' | '2-up-h' | '2-up-v' | '3-up' | '4-grid' | 'pip';
+
 export interface TemplateSlot {
   slotType: 'photo' | 'video' | 'any';
   duration: number;
@@ -56,6 +59,22 @@ export interface TemplateSlot {
   speedPreset?: string;
   /** Optional text overlay shown during this slot */
   textOverlay?: TextOverlay;
+  /** Layout mode — 'single' (default), '2-up-h', '2-up-v', '3-up', '4-grid', 'pip' */
+  layout?: SlotLayout;
+  /** How many media items this slot consumes (1 for single, 2-4 for multi-photo layouts) */
+  mediaCount?: number;
+  /** Transition overlay — VFX clip composited on top during this slot's outgoing transition */
+  transitionOverlay?: TransitionOverlayConfig;
+}
+
+/** Configuration for a transition overlay (VFX clip between shots) */
+export interface TransitionOverlayConfig {
+  /** Overlay ID from the built-in registry, or 'custom' for user-uploaded */
+  id: string;
+  /** Canvas blend mode for compositing (default: 'screen' for light effects, 'multiply' for dark) */
+  blendMode?: GlobalCompositeOperation;
+  /** Opacity of the overlay (0-1, default 0.8) */
+  opacity?: number;
 }
 
 /** Text overlay that can appear on a slot or as intro/outro */
@@ -111,6 +130,8 @@ export interface SmartTemplate {
   colorGrade?: string;
   /** Default speed preset for all slots */
   defaultSpeed?: string;
+  /** Fade-to-black duration at end of video (seconds, 0 = disabled). Default: 0.8 */
+  fadeOutDuration?: number;
 }
 
 export interface Template {

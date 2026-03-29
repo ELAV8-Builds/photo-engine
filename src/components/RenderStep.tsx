@@ -2,10 +2,15 @@
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { MediaFile, MusicTrack, RenderProgress, SmartTemplate, TemplateSlot, TemplateTheme, TextOverlay } from '@/types';
-import { SMART_TEMPLATES, assignMediaToSlots, expandTemplateForMedia, formatDuration } from '@/lib/templates';
+import { SMART_TEMPLATES, assignMediaToSlots, expandTemplateForMedia, formatDuration, getSlotMediaIds, applyBeatSync } from '@/lib/templates';
+import { detectBeats, quantizeSlotsToBeat, getStrongBeats } from '@/lib/beat-detect';
 import { createParticles, updateParticles, drawParticles, drawVignette, drawTintOverlay, getParticleCSS, Particle } from '@/lib/particles';
 import { drawTextOverlay } from '@/lib/text-renderer';
 import { EffectsEngine, templateSlotToEngineSlot, type SlotConfig } from '@/lib/effects-engine';
+import { initFFmpeg, writeFrame, writeAudio, mixAudioTracks, encodeMP4, cleanupFS } from '@/lib/mp4-encoder';
+import { getVideoElement, seekToTime, getVideoTime, loadMediaSource, disposeAllVideos } from '@/lib/video-frame-extractor';
+import { renderSplitScreen, getLayoutMediaCount } from '@/lib/split-screen';
+import { renderTransitionOverlay } from '@/lib/transition-overlays';
 import type { MixerOverrides } from '@/components/TemplateMixer';
 
 interface RenderStepProps {
@@ -65,12 +70,53 @@ export default function RenderStep(props: RenderStepProps) {
   const selectedMedia = useMemo(() => photos.filter(p => p.selected), [photos]);
   const baseTemplate = SMART_TEMPLATES.find(t => t.id === selectedTemplate) || null;
 
+  // Beat detection state
+  const [beatInfo, setBeatInfo] = useState<{ beats: number[]; bpm: number; duration: number } | null>(null);
+
+  // Detect beats when music changes
+  useEffect(() => {
+    if (!music?.url) {
+      setBeatInfo(null);
+      return;
+    }
+    let cancelled = false;
+    const source = music.file || music.url;
+    detectBeats(source, 0.6).then((info) => {
+      if (!cancelled) {
+        setBeatInfo(info);
+        console.log(`[BeatSync] Detected ${info.beats.length} beats, ~${info.bpm} BPM`);
+      }
+    }).catch((err) => {
+      if (!cancelled) {
+        console.warn('[BeatSync] Beat detection failed:', err);
+        setBeatInfo(null);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [music?.url, music?.file]);
+
   // Expand template to fit all selected media (e.g., 60 photos → 60 slots)
-  const template = useMemo(() => {
+  const expandedTemplate = useMemo(() => {
     if (!baseTemplate) return null;
     const targetDuration = music?.duration && music.duration > 0 ? music.duration : undefined;
     return expandTemplateForMedia(baseTemplate, selectedMedia.length, targetDuration);
   }, [baseTemplate, selectedMedia.length, music?.duration]);
+
+  // Apply beat sync to the expanded template (if beats detected)
+  const template = useMemo(() => {
+    if (!expandedTemplate) return null;
+    if (!beatInfo || beatInfo.beats.length < 4) return expandedTemplate;
+
+    // Use strong beats for slot transitions
+    const strongBeats = getStrongBeats(beatInfo.beats, beatInfo.bpm);
+    const beatDurations = quantizeSlotsToBeat(
+      expandedTemplate.slots.length,
+      strongBeats,
+      beatInfo.duration,
+    );
+
+    return applyBeatSync(expandedTemplate, beatDurations);
+  }, [expandedTemplate, beatInfo]);
 
   const mediaIds = useMemo(() => selectedMedia.map(m => m.id), [selectedMedia]);
   const slotAssignments = useMemo(
@@ -146,6 +192,28 @@ export default function RenderStep(props: RenderStepProps) {
           setPreviewSlotIndex(frame.slotIndex);
         }
 
+        // For video-type media, update the video element's currentTime
+        // so the engine draws the correct frame
+        const updateVideoTime = (slotIdx: number, progress: number) => {
+          const mid = slotAssignments[slotIdx] || '';
+          const media = mediaById.get(mid);
+          if (media?.type === 'video') {
+            const source = imageMap.get(slotIdx);
+            if (source && source instanceof HTMLVideoElement) {
+              const targetTime = getVideoTime(progress, media);
+              // Only seek if we've moved significantly (avoid micro-seeks)
+              if (Math.abs(source.currentTime - targetTime) > 0.05) {
+                source.currentTime = targetTime;
+              }
+            }
+          }
+        };
+
+        updateVideoTime(frame.slotIndex, frame.slotProgress);
+        if (frame.inTransition) {
+          updateVideoTime(frame.transitionDstSlot, 0);
+        }
+
         // Render using the engine
         if (imageMap.has(frame.slotIndex) || (frame.inTransition && imageMap.has(frame.transitionDstSlot))) {
           engine.renderFrame(ctx, frame, slotConfigs, imageMap);
@@ -156,6 +224,17 @@ export default function RenderStep(props: RenderStepProps) {
           }
           if (template.theme.vignette > 0) {
             drawVignette(ctx, w, h, template.theme.vignette);
+          }
+
+          // Fade-out on last slot
+          const fadeOutDur = template.fadeOutDuration ?? 0;
+          if (fadeOutDur > 0) {
+            const timeRemaining = totalDuration - globalTime;
+            if (timeRemaining <= fadeOutDur) {
+              const fadeAlpha = 1 - (timeRemaining / fadeOutDur);
+              ctx.fillStyle = `rgba(0, 0, 0, ${Math.min(1, Math.max(0, fadeAlpha))})`;
+              ctx.fillRect(0, 0, w, h);
+            }
           }
         }
 
@@ -218,8 +297,38 @@ export default function RenderStep(props: RenderStepProps) {
       }
     }
 
-    // Load images
-    template.slots.forEach((_, i) => {
+    // Load images (and video elements for video-type media)
+    template.slots.forEach((slot, i) => {
+      const layout = slot.layout ?? 'single';
+
+      // Split-screen layouts: composite multiple images into one canvas
+      if (layout !== 'single') {
+        const slotMediaIds = getSlotMediaIds(i, template, slotAssignments, mediaIds);
+        const slotMedia = slotMediaIds
+          .map(id => mediaById.get(id))
+          .filter((m): m is MediaFile => !!m);
+
+        if (slotMedia.length === 0) {
+          imagesLoaded++;
+          return;
+        }
+
+        loadSplitScreenComposite(slotMedia, layout, w, h).then((composite) => {
+          imageMap.set(i, composite);
+          imagesLoaded++;
+          if (imagesLoaded >= 1 && !cleanupAnim) {
+            cleanupAnim = tryStartAnimation();
+          }
+        }).catch(() => {
+          imagesLoaded++;
+          if (imagesLoaded >= 1 && !cleanupAnim) {
+            cleanupAnim = tryStartAnimation();
+          }
+        });
+        return;
+      }
+
+      // Single layout — existing behavior
       const mid = slotAssignments[i] || '';
       const media = mediaById.get(mid);
       if (!media) {
@@ -227,6 +336,41 @@ export default function RenderStep(props: RenderStepProps) {
         return;
       }
 
+      if (media.type === 'video') {
+        // Load real video element for video-type media
+        getVideoElement(media).then((video) => {
+          // Seek to trim start
+          const startTime = media.trimStart ?? 0;
+          seekToTime(video, startTime).then(() => {
+            imageMap.set(i, video);
+            imagesLoaded++;
+            if (imagesLoaded >= 1 && !cleanupAnim) {
+              cleanupAnim = tryStartAnimation();
+            }
+          });
+        }).catch(() => {
+          // Fallback: try loading as image (thumbnail)
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => {
+            imageMap.set(i, img);
+            imagesLoaded++;
+            if (imagesLoaded >= 1 && !cleanupAnim) {
+              cleanupAnim = tryStartAnimation();
+            }
+          };
+          img.onerror = () => {
+            imagesLoaded++;
+            if (imagesLoaded >= 1 && !cleanupAnim) {
+              cleanupAnim = tryStartAnimation();
+            }
+          };
+          img.src = media.thumbnailUrl || media.url;
+        });
+        return;
+      }
+
+      // Photo — standard image loading
       const cached = previewImagesRef.current.get(media.url);
       if (cached && cached.complete) {
         imageMap.set(i, cached);
@@ -253,9 +397,7 @@ export default function RenderStep(props: RenderStepProps) {
           cleanupAnim = tryStartAnimation();
         }
       };
-      img.src = media.type === 'video'
-        ? (media.thumbnailUrl || media.url)
-        : media.url;
+      img.src = media.url;
     });
 
     return () => {
@@ -362,14 +504,21 @@ export default function RenderStep(props: RenderStepProps) {
   }, [template, slotAssignments, selectedMedia, title, aspectRatio, outputQuality, music, progress.status]);
 
   // ------------------------------------------------------------------
-  //  Client-side canvas render
+  //  Client-side canvas render → MP4 via ffmpeg.wasm
   // ------------------------------------------------------------------
   const handleClientRender = useCallback(async () => {
     if (!template) return;
 
-    setProgress({ status: 'rendering', percent: 10, currentFrame: 0, totalFrames: template.slots.length, message: 'Creating slideshow...' });
+    const FPS = 30;
+
+    setProgress({ status: 'preparing', percent: 2, currentFrame: 0, totalFrames: template.slots.length, message: 'Loading video encoder...' });
 
     try {
+      // 1. Load ffmpeg.wasm (cached after first load)
+      const ffmpeg = await initFFmpeg((msg) => {
+        setProgress(prev => ({ ...prev, message: msg }));
+      });
+
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
       if (!ctx) throw new Error('Canvas not supported');
@@ -381,58 +530,11 @@ export default function RenderStep(props: RenderStepProps) {
       // Create the v4 effects engine for this render
       const engine = new EffectsEngine(dims.width, dims.height);
 
-      const stream = canvas.captureStream(30);
+      setProgress({ status: 'rendering', percent: 5, currentFrame: 0, totalFrames: template.slots.length, message: 'Rendering frames...' });
 
-      // Add audio track(s) — stitches multiple tracks in sequence
-      const tracksToUse = musicTracks.length > 0 ? musicTracks : (music ? [music] : []);
-      if (tracksToUse.length > 0) {
-        try {
-          const audioCtx = new AudioContext();
-          const dest = audioCtx.createMediaStreamDestination();
+      // 2. Render frames and write each to ffmpeg virtual FS
+      let globalFrameNumber = 0;
 
-          // Load all audio buffers
-          const buffers: AudioBuffer[] = [];
-          for (const t of tracksToUse) {
-            try {
-              const audioUrl = t.file ? URL.createObjectURL(t.file) : t.url;
-              const response = await fetch(audioUrl);
-              const arrayBuf = await response.arrayBuffer();
-              const decoded = await audioCtx.decodeAudioData(arrayBuf);
-              buffers.push(decoded);
-              if (t.file) URL.revokeObjectURL(audioUrl);
-            } catch {
-              console.warn('[Export] Failed to decode audio track:', t.name);
-            }
-          }
-
-          // Schedule tracks in sequence
-          let startOffset = 0;
-          for (const buffer of buffers) {
-            const source = audioCtx.createBufferSource();
-            source.buffer = buffer;
-            source.connect(dest);
-            source.start(audioCtx.currentTime + startOffset);
-            startOffset += buffer.duration;
-          }
-
-          for (const track of dest.stream.getAudioTracks()) {
-            stream.addTrack(track);
-          }
-        } catch {
-          // Audio mixing may fail, continue without audio
-        }
-      }
-
-      const recorder = new MediaRecorder(stream, {
-        mimeType: 'video/webm;codecs=vp9',
-        videoBitsPerSecond: outputQuality === '4k' ? 20000000 : outputQuality === '1080p' ? 8000000 : 4000000,
-      });
-
-      const chunks: Blob[] = [];
-      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
-      recorder.start();
-
-      // Render each slot with its assigned media (mixer overrides applied)
       for (let i = 0; i < template.slots.length; i++) {
         const slot = applyMixerOverrides(template.slots[i], mixerOverrides);
         const assignedMediaId = slotAssignments[i] || '';
@@ -440,14 +542,53 @@ export default function RenderStep(props: RenderStepProps) {
 
         setProgress(prev => ({
           ...prev,
-          percent: 10 + Math.round((i / template.slots.length) * 80),
+          status: 'rendering',
+          percent: 5 + Math.round((i / template.slots.length) * 55),
           currentFrame: i + 1,
           message: `Rendering slot ${i + 1} of ${template.slots.length}...`,
         }));
 
-        if (assignedMedia) {
-          await renderSlotToCanvas(
+        const slotLayout = slot.layout ?? 'single';
+
+        if (slotLayout !== 'single') {
+          // Split-screen slot: composite multiple images, render through engine
+          const slotMediaIds = getSlotMediaIds(i, template, slotAssignments, mediaIds);
+          const slotMedia = slotMediaIds
+            .map(id => mediaById.get(id))
+            .filter((m): m is MediaFile => !!m);
+
+          if (slotMedia.length > 0) {
+            const composite = await loadSplitScreenComposite(
+              slotMedia, slotLayout, canvas.width, canvas.height,
+            );
+            // Create a temporary MediaFile-like wrapper for the composite
+            const compositeMedia: MediaFile = {
+              ...slotMedia[0],
+              type: 'photo', // Treat composite as a photo
+            };
+            // Use the composite as the source for the effects engine
+            globalFrameNumber = await renderSlotFramesToFFmpegWithSource(
+              ctx, canvas, ffmpeg, composite, compositeMedia,
+              canvas.width, canvas.height, slot, template.theme,
+              textOverrides, i, engine, globalFrameNumber, FPS,
+            );
+          } else {
+            // No media — black frames
+            const frames = Math.round(slot.duration * FPS);
+            for (let f = 0; f < frames; f++) {
+              ctx.fillStyle = '#000';
+              ctx.fillRect(0, 0, canvas.width, canvas.height);
+              await writeFrame(ffmpeg, canvas, globalFrameNumber);
+              globalFrameNumber++;
+              if (f % 10 === 0) await new Promise(r => setTimeout(r, 0));
+            }
+          }
+        } else if (assignedMedia) {
+          // Single layout — render slot frames via effects engine
+          globalFrameNumber = await renderSlotFramesToFFmpeg(
             ctx,
+            canvas,
+            ffmpeg,
             assignedMedia,
             canvas.width,
             canvas.height,
@@ -456,22 +597,31 @@ export default function RenderStep(props: RenderStepProps) {
             textOverrides,
             i,
             engine,
+            globalFrameNumber,
+            FPS,
           );
         } else {
-          // Empty slot — hold black for slot duration
-          ctx.fillStyle = '#000';
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-          await holdFrames(slot.duration);
+          // Empty slot — hold black frames
+          const frames = Math.round(slot.duration * FPS);
+          for (let f = 0; f < frames; f++) {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            await writeFrame(ffmpeg, canvas, globalFrameNumber);
+            globalFrameNumber++;
+            if (f % 10 === 0) await new Promise(r => setTimeout(r, 0));
+          }
         }
 
-        // Render inter-slot transition if not the last slot
+        // Render inter-slot transition
         if (i < template.slots.length - 1) {
           const nextSlot = applyMixerOverrides(template.slots[i + 1], mixerOverrides);
           const nextMediaId = slotAssignments[i + 1] || '';
           const nextMedia = mediaById.get(nextMediaId);
           if (assignedMedia && nextMedia) {
-            await renderTransition(
+            globalFrameNumber = await renderTransitionFramesToFFmpeg(
               ctx,
+              canvas,
+              ffmpeg,
               assignedMedia,
               nextMedia,
               canvas.width,
@@ -479,21 +629,106 @@ export default function RenderStep(props: RenderStepProps) {
               slot,
               nextSlot,
               engine,
+              globalFrameNumber,
+              FPS,
             );
           }
         }
       }
 
-      recorder.stop();
+      // Render fade-out at the end (re-render last frame with increasing black overlay)
+      const fadeOutDur = template.fadeOutDuration ?? 0;
+      if (fadeOutDur > 0) {
+        const fadeFrames = Math.round(fadeOutDur * FPS);
+        setProgress(prev => ({ ...prev, message: 'Rendering fade-out...' }));
 
-      await new Promise<void>((resolve) => {
-        recorder.onstop = () => resolve();
+        // Get last slot info for re-rendering the final frame with fade
+        const lastSlotIndex = template.slots.length - 1;
+        const lastSlot = applyMixerOverrides(template.slots[lastSlotIndex], mixerOverrides);
+        const lastMediaId = slotAssignments[lastSlotIndex] || '';
+        const lastMedia = mediaById.get(lastMediaId);
+
+        if (lastMedia) {
+          const lastSource = await loadMediaImage(lastMedia);
+          const isVideo = lastMedia.type === 'video' && lastSource instanceof HTMLVideoElement;
+          const { fx, fy } = getFocusPoint(lastMedia, lastSlot.holdPoint);
+          const lastSlotConfig = templateSlotToEngineSlot(lastSlot, fx, fy);
+          const lastSlotConfigs: SlotConfig[] = [lastSlotConfig];
+          const lastImageMap = new Map<number, CanvasImageSource>();
+          lastImageMap.set(0, lastSource);
+
+          for (let f = 0; f < fadeFrames; f++) {
+            const fadeProgress = f / fadeFrames;
+
+            // Hold on the last frame of the slot
+            if (isVideo) {
+              const videoTime = getVideoTime(1, lastMedia);
+              await seekToTime(lastSource as HTMLVideoElement, videoTime);
+            }
+
+            const engineFrame = engine.calculateFrame(lastSlotConfig.duration * 0.99, lastSlotConfigs);
+            engine.renderFrame(ctx, engineFrame, lastSlotConfigs, lastImageMap);
+
+            // Apply progressive black overlay
+            ctx.fillStyle = `rgba(0, 0, 0, ${fadeProgress})`;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            await writeFrame(ffmpeg, canvas, globalFrameNumber);
+            globalFrameNumber++;
+
+            if (f % 5 === 0) await new Promise(r => setTimeout(r, 0));
+          }
+        } else {
+          // No media for last slot — just fade black frames
+          for (let f = 0; f < fadeFrames; f++) {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            await writeFrame(ffmpeg, canvas, globalFrameNumber);
+            globalFrameNumber++;
+          }
+        }
+      }
+
+      const totalFrames = globalFrameNumber;
+
+      // 3. Mix and write audio (if any)
+      setProgress(prev => ({ ...prev, percent: 62, message: 'Processing audio...' }));
+      const tracksToUse = musicTracks.length > 0 ? musicTracks : (music ? [music] : []);
+      let hasAudio = false;
+
+      if (tracksToUse.length > 0) {
+        const audioBlob = await mixAudioTracks(
+          tracksToUse.map(t => ({ url: t.url, file: t.file })),
+          template.totalDuration,
+        );
+        if (audioBlob) {
+          await writeAudio(ffmpeg, audioBlob, 'audio.wav');
+          hasAudio = true;
+        }
+      }
+
+      // 4. Encode MP4 with ffmpeg
+      setProgress(prev => ({
+        ...prev,
+        status: 'encoding',
+        percent: 65,
+        message: 'Encoding MP4...',
+      }));
+
+      const mp4Blob = await encodeMP4(ffmpeg, FPS, totalFrames, hasAudio, (pct) => {
+        setProgress(prev => ({
+          ...prev,
+          percent: 65 + Math.round(pct * 0.30), // 65-95%
+          message: `Encoding MP4... ${pct}%`,
+        }));
       });
 
-      setProgress(prev => ({ ...prev, percent: 95, status: 'encoding', message: 'Encoding...' }));
+      // 5. Clean up virtual FS
+      setProgress(prev => ({ ...prev, percent: 96, message: 'Cleaning up...' }));
+      await cleanupFS(ffmpeg, totalFrames);
 
-      const blob = new Blob(chunks, { type: 'video/webm' });
-      const url = URL.createObjectURL(blob);
+      // 6. Create download URL
+      const url = URL.createObjectURL(mp4Blob);
 
       setProgress({
         status: 'complete',
@@ -513,16 +748,17 @@ export default function RenderStep(props: RenderStepProps) {
         }
       }
     } catch (e) {
+      console.error('[Export] MP4 render failed:', e);
       setProgress({
         status: 'error',
         percent: 0,
         currentFrame: 0,
         totalFrames: 0,
         message: '',
-        error: e instanceof Error ? e.message : 'Client-side render failed',
+        error: e instanceof Error ? e.message : 'MP4 export failed',
       });
     }
-  }, [template, slotAssignments, selectedMedia, mediaById, aspectRatio, outputQuality, music, textOverrides, mixerOverrides]);
+  }, [template, slotAssignments, selectedMedia, mediaById, aspectRatio, outputQuality, music, textOverrides, mixerOverrides, musicTracks, onExportComplete]);
 
   const isRendering = progress.status === 'rendering' || progress.status === 'encoding' || progress.status === 'preparing';
 
@@ -835,7 +1071,7 @@ export default function RenderStep(props: RenderStepProps) {
               {progress.outputUrl && (
                 <a
                   href={progress.outputUrl}
-                  download={`${title || 'photoforge-export'}.webm`}
+                  download={`${title || 'photoforge-export'}.mp4`}
                   className="btn-gold inline-flex items-center gap-2 mt-4"
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -976,17 +1212,75 @@ async function holdFrames(durationSeconds: number): Promise<void> {
 //  Load an image from a MediaFile (using thumbnailUrl for videos)
 // ====================================================================
 
-function loadMediaImage(media: MediaFile): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
+function loadMediaImage(media: MediaFile): Promise<CanvasImageSource> {
+  if (media.type === 'video') {
+    // Return a video element seeked to trim start for real frame rendering
+    return getVideoElement(media).then(async (video) => {
+      const startTime = media.trimStart ?? 0;
+      await seekToTime(video, startTime);
+      return video as CanvasImageSource;
+    }).catch(() => {
+      // Fallback to thumbnail image if video loading fails
+      return new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error(`Failed to load media: ${media.name}`));
+        img.src = media.thumbnailUrl || media.url;
+      });
+    });
+  }
+
+  // Photo — standard image loading
+  return new Promise<HTMLImageElement>((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => resolve(img);
     img.onerror = () => reject(new Error(`Failed to load media: ${media.name}`));
-    // For video type, use thumbnailUrl if available; otherwise fall back to url
-    img.src = media.type === 'video'
-      ? (media.thumbnailUrl || media.url)
-      : media.url;
+    img.src = media.url;
   });
+}
+
+/**
+ * Load multiple media items and composite them into a split-screen layout.
+ * Returns an OffscreenCanvas (or regular Canvas) that can be used as a CanvasImageSource.
+ */
+async function loadSplitScreenComposite(
+  mediaItems: MediaFile[],
+  layout: import('@/types').SlotLayout,
+  width: number,
+  height: number,
+): Promise<CanvasImageSource> {
+  // Load all media sources
+  const sources = await Promise.all(
+    mediaItems.map(m => loadMediaImage(m).catch(() => null)),
+  );
+
+  // Filter out failed loads
+  const validSources = sources.filter((s): s is CanvasImageSource => s !== null);
+
+  if (validSources.length === 0) {
+    throw new Error('No media loaded for split-screen');
+  }
+
+  // Create composite canvas
+  let compositeCanvas: HTMLCanvasElement | OffscreenCanvas;
+  let compositeCtx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+
+  if (typeof OffscreenCanvas !== 'undefined') {
+    compositeCanvas = new OffscreenCanvas(width, height);
+    compositeCtx = compositeCanvas.getContext('2d')! as OffscreenCanvasRenderingContext2D;
+  } else {
+    compositeCanvas = document.createElement('canvas');
+    compositeCanvas.width = width;
+    compositeCanvas.height = height;
+    compositeCtx = compositeCanvas.getContext('2d')!;
+  }
+
+  // Render the split-screen layout
+  renderSplitScreen(compositeCtx, layout, validSources, width, height);
+
+  return compositeCanvas;
 }
 
 // ====================================================================
@@ -1030,6 +1324,7 @@ function drawCover(
 
 // ====================================================================
 //  renderSlotToCanvas — renders one slot using the v4 EffectsEngine
+//  (Used by preview — does NOT capture frames to ffmpeg)
 // ====================================================================
 
 async function renderSlotToCanvas(
@@ -1043,7 +1338,8 @@ async function renderSlotToCanvas(
   slotIndex: number,
   engine: EffectsEngine,
 ): Promise<void> {
-  const img = await loadMediaImage(media);
+  const source = await loadMediaImage(media);
+  const isVideo = media.type === 'video' && source instanceof HTMLVideoElement;
   const fps = 30;
   const frames = Math.round(slot.duration * fps);
   const { fx, fy } = getFocusPoint(media, slot.holdPoint);
@@ -1054,7 +1350,7 @@ async function renderSlotToCanvas(
   // Create slot array + image map for the engine
   const slotConfigs: SlotConfig[] = [slotConfig];
   const imageMap = new Map<number, CanvasImageSource>();
-  imageMap.set(0, img);
+  imageMap.set(0, source);
 
   // Initialize particles for this slot
   let particles: Particle[] = [];
@@ -1066,6 +1362,12 @@ async function renderSlotToCanvas(
   for (let frame = 0; frame < frames; frame++) {
     const t = frames > 1 ? frame / (frames - 1) : 0;
     const globalTime = t * slotConfig.duration;
+
+    // For video media, seek to the correct time for this frame
+    if (isVideo) {
+      const videoTime = getVideoTime(t, media);
+      await seekToTime(source as HTMLVideoElement, videoTime);
+    }
 
     // Use the v4 engine for motion + post-processing
     const engineFrame = engine.calculateFrame(globalTime, slotConfigs);
@@ -1107,6 +1409,7 @@ async function renderSlotToCanvas(
 
 // ====================================================================
 //  renderTransition — draws transition between two slots using v4 engine
+//  (Used by preview — does NOT capture frames to ffmpeg)
 // ====================================================================
 
 async function renderTransition(
@@ -1121,8 +1424,10 @@ async function renderTransition(
 ): Promise<void> {
   if (toSlot.transition === 'none') return;
 
-  const fromImg = await loadMediaImage(fromMedia);
-  const toImg = await loadMediaImage(toMedia);
+  const fromSource = await loadMediaImage(fromMedia);
+  const toSource = await loadMediaImage(toMedia);
+  const fromIsVideo = fromMedia.type === 'video' && fromSource instanceof HTMLVideoElement;
+  const toIsVideo = toMedia.type === 'video' && toSource instanceof HTMLVideoElement;
 
   const { fx: fxFrom, fy: fyFrom } = getFocusPoint(fromMedia, fromSlot.holdPoint);
   const { fx: fxTo, fy: fyTo } = getFocusPoint(toMedia, toSlot.holdPoint);
@@ -1137,11 +1442,22 @@ async function renderTransition(
   // Build a two-slot config to let the engine handle the transition
   const slotConfigs: SlotConfig[] = [fromConfig, toConfig];
   const imageMap = new Map<number, CanvasImageSource>();
-  imageMap.set(0, fromImg);
-  imageMap.set(1, toImg);
+  imageMap.set(0, fromSource);
+  imageMap.set(1, toSource);
 
   for (let frame = 0; frame < frames; frame++) {
     const t = frames > 1 ? frame / (frames - 1) : 1;
+
+    // Seek video sources during transition
+    if (fromIsVideo) {
+      const fromProgress = Math.min(1, 0.9 + t * 0.1); // Last 10% of from-clip
+      const fromTime = getVideoTime(fromProgress, fromMedia);
+      await seekToTime(fromSource as HTMLVideoElement, fromTime);
+    }
+    if (toIsVideo) {
+      const toTime = getVideoTime(t * 0.1, toMedia); // First 10% of to-clip
+      await seekToTime(toSource as HTMLVideoElement, toTime);
+    }
 
     // Position the global time within the transition zone (end of slot 0)
     const transStart = fromConfig.duration - transDuration;
@@ -1150,8 +1466,253 @@ async function renderTransition(
     const engineFrame = engine.calculateFrame(globalTime, slotConfigs);
     engine.renderFrame(ctx, engineFrame, slotConfigs, imageMap);
 
+    // Apply transition overlay if configured
+    if (fromSlot.transitionOverlay) {
+      renderTransitionOverlay(ctx, fromSlot.transitionOverlay, width, height, t);
+    }
+
     if (frame % 3 === 0) {
       await new Promise(r => requestAnimationFrame(r));
     }
   }
+}
+
+// ====================================================================
+//  renderSlotFramesToFFmpeg — renders one slot and writes each frame
+//  to ffmpeg virtual FS (for MP4 export)
+// ====================================================================
+
+async function renderSlotFramesToFFmpeg(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  ffmpeg: import('@ffmpeg/ffmpeg').FFmpeg,
+  media: MediaFile,
+  width: number,
+  height: number,
+  slot: TemplateSlot,
+  theme: TemplateTheme,
+  textOverrides: Record<number, string | null>,
+  slotIndex: number,
+  engine: EffectsEngine,
+  startFrame: number,
+  fps: number,
+): Promise<number> {
+  const source = await loadMediaImage(media);
+  const isVideo = media.type === 'video' && source instanceof HTMLVideoElement;
+  const frames = Math.round(slot.duration * fps);
+  const { fx, fy } = getFocusPoint(media, slot.holdPoint);
+
+  const slotConfig = templateSlotToEngineSlot(slot, fx, fy);
+  const slotConfigs: SlotConfig[] = [slotConfig];
+  const imageMap = new Map<number, CanvasImageSource>();
+  imageMap.set(0, source);
+
+  // Initialize particles
+  let particles: Particle[] = [];
+  if (theme.particles !== 'none') {
+    const particleCount = Math.round(80 * theme.particleDensity);
+    particles = createParticles(theme.particles, particleCount, width, height);
+  }
+
+  let frameNumber = startFrame;
+
+  for (let frame = 0; frame < frames; frame++) {
+    const t = frames > 1 ? frame / (frames - 1) : 0;
+    const globalTime = t * slotConfig.duration;
+
+    // For video media, seek to the correct time for this frame
+    if (isVideo) {
+      const videoTime = getVideoTime(t, media);
+      await seekToTime(source as HTMLVideoElement, videoTime);
+    }
+
+    const engineFrame = engine.calculateFrame(globalTime, slotConfigs);
+    engine.renderFrame(ctx, engineFrame, slotConfigs, imageMap);
+
+    // Theme overlays
+    if (theme.tintOverlay) {
+      drawTintOverlay(ctx, width, height, theme.tintOverlay);
+    }
+    if (theme.vignette > 0) {
+      drawVignette(ctx, width, height, theme.vignette);
+    }
+    if (theme.particles !== 'none' && particles.length > 0) {
+      drawParticles(ctx, particles, width, height);
+      particles = updateParticles(particles, 1 / fps, width, height);
+    }
+    if (slot.textOverlay && textOverrides[slotIndex] !== null) {
+      const overlay = { ...slot.textOverlay };
+      if (typeof textOverrides[slotIndex] === 'string') {
+        overlay.text = textOverrides[slotIndex] as string;
+      }
+      drawTextOverlay(ctx, overlay, width, height, t);
+    }
+
+    // Write frame to ffmpeg virtual FS
+    await writeFrame(ffmpeg, canvas, frameNumber);
+    frameNumber++;
+
+    // Yield to browser every 5 frames to prevent blocking
+    if (frame % 5 === 0) {
+      await new Promise(r => setTimeout(r, 0));
+    }
+  }
+
+  return frameNumber;
+}
+
+// ====================================================================
+//  renderTransitionFramesToFFmpeg — renders transition frames and
+//  writes each to ffmpeg virtual FS (for MP4 export)
+// ====================================================================
+
+async function renderTransitionFramesToFFmpeg(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  ffmpeg: import('@ffmpeg/ffmpeg').FFmpeg,
+  fromMedia: MediaFile,
+  toMedia: MediaFile,
+  width: number,
+  height: number,
+  fromSlot: TemplateSlot,
+  toSlot: TemplateSlot,
+  engine: EffectsEngine,
+  startFrame: number,
+  fps: number,
+): Promise<number> {
+  if (toSlot.transition === 'none') return startFrame;
+
+  const fromSource = await loadMediaImage(fromMedia);
+  const toSource = await loadMediaImage(toMedia);
+  const fromIsVideo = fromMedia.type === 'video' && fromSource instanceof HTMLVideoElement;
+  const toIsVideo = toMedia.type === 'video' && toSource instanceof HTMLVideoElement;
+
+  const { fx: fxFrom, fy: fyFrom } = getFocusPoint(fromMedia, fromSlot.holdPoint);
+  const { fx: fxTo, fy: fyTo } = getFocusPoint(toMedia, toSlot.holdPoint);
+
+  const fromConfig = templateSlotToEngineSlot(fromSlot, fxFrom, fyFrom);
+  const toConfig = templateSlotToEngineSlot(toSlot, fxTo, fyTo);
+
+  const transDuration = toSlot.transitionDuration ?? 0.4;
+  const frames = Math.round(transDuration * fps);
+
+  const slotConfigs: SlotConfig[] = [fromConfig, toConfig];
+  const imageMap = new Map<number, CanvasImageSource>();
+  imageMap.set(0, fromSource);
+  imageMap.set(1, toSource);
+
+  let frameNumber = startFrame;
+
+  for (let frame = 0; frame < frames; frame++) {
+    const t = frames > 1 ? frame / (frames - 1) : 1;
+    const transStart = fromConfig.duration - transDuration;
+    const globalTime = transStart + t * transDuration;
+
+    // Seek video sources during transition
+    if (fromIsVideo) {
+      // From video is near its end during transition
+      const fromProgress = Math.min(1, (transStart + t * transDuration) / fromConfig.duration);
+      const fromTime = getVideoTime(fromProgress, fromMedia);
+      await seekToTime(fromSource as HTMLVideoElement, fromTime);
+    }
+    if (toIsVideo) {
+      // To video starts from beginning during transition
+      const toTime = getVideoTime(t * 0.1, toMedia); // First 10% of clip during transition
+      await seekToTime(toSource as HTMLVideoElement, toTime);
+    }
+
+    const engineFrame = engine.calculateFrame(globalTime, slotConfigs);
+    engine.renderFrame(ctx, engineFrame, slotConfigs, imageMap);
+
+    // Apply transition overlay if configured
+    if (fromSlot.transitionOverlay) {
+      renderTransitionOverlay(ctx, fromSlot.transitionOverlay, width, height, t);
+    }
+
+    // Write frame to ffmpeg virtual FS
+    await writeFrame(ffmpeg, canvas, frameNumber);
+    frameNumber++;
+
+    // Yield every 3 frames
+    if (frame % 3 === 0) {
+      await new Promise(r => setTimeout(r, 0));
+    }
+  }
+
+  return frameNumber;
+}
+
+// ====================================================================
+//  renderSlotFramesToFFmpegWithSource — like renderSlotFramesToFFmpeg
+//  but takes a pre-loaded CanvasImageSource (e.g., split-screen composite)
+// ====================================================================
+
+async function renderSlotFramesToFFmpegWithSource(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  ffmpeg: import('@ffmpeg/ffmpeg').FFmpeg,
+  source: CanvasImageSource,
+  media: MediaFile,
+  width: number,
+  height: number,
+  slot: TemplateSlot,
+  theme: TemplateTheme,
+  textOverrides: Record<number, string | null>,
+  slotIndex: number,
+  engine: EffectsEngine,
+  startFrame: number,
+  fps: number,
+): Promise<number> {
+  const frames = Math.round(slot.duration * fps);
+  const { fx, fy } = getFocusPoint(media, slot.holdPoint);
+
+  const slotConfig = templateSlotToEngineSlot(slot, fx, fy);
+  const slotConfigs: SlotConfig[] = [slotConfig];
+  const imageMap = new Map<number, CanvasImageSource>();
+  imageMap.set(0, source);
+
+  // Initialize particles
+  let particles: Particle[] = [];
+  if (theme.particles !== 'none') {
+    const particleCount = Math.round(80 * theme.particleDensity);
+    particles = createParticles(theme.particles, particleCount, width, height);
+  }
+
+  let frameNumber = startFrame;
+
+  for (let frame = 0; frame < frames; frame++) {
+    const t = frames > 1 ? frame / (frames - 1) : 0;
+    const globalTime = t * slotConfig.duration;
+
+    const engineFrame = engine.calculateFrame(globalTime, slotConfigs);
+    engine.renderFrame(ctx, engineFrame, slotConfigs, imageMap);
+
+    // Theme overlays
+    if (theme.tintOverlay) {
+      drawTintOverlay(ctx, width, height, theme.tintOverlay);
+    }
+    if (theme.vignette > 0) {
+      drawVignette(ctx, width, height, theme.vignette);
+    }
+    if (theme.particles !== 'none' && particles.length > 0) {
+      drawParticles(ctx, particles, width, height);
+      particles = updateParticles(particles, 1 / fps, width, height);
+    }
+    if (slot.textOverlay && textOverrides[slotIndex] !== null) {
+      const overlay = { ...slot.textOverlay };
+      if (typeof textOverrides[slotIndex] === 'string') {
+        overlay.text = textOverrides[slotIndex] as string;
+      }
+      drawTextOverlay(ctx, overlay, width, height, t);
+    }
+
+    await writeFrame(ffmpeg, canvas, frameNumber);
+    frameNumber++;
+
+    if (frame % 5 === 0) {
+      await new Promise(r => setTimeout(r, 0));
+    }
+  }
+
+  return frameNumber;
 }

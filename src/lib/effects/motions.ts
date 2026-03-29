@@ -420,13 +420,115 @@ export const slowZoom: MotionFn = (ctx, img, t, opts) => {
   drawTransformed(ctx, img, width, height, scale, 0, 0);
 };
 
-/** Subtle horizontal parallax */
+/**
+ * Depth-aware parallax — uses face detection focal point to create a
+ * simulated 3D depth effect. Background moves faster than the subject area.
+ *
+ * Technique: draw the image twice with different offsets —
+ * first full image (background layer) moves more, then a vignette-masked
+ * version around the focal point (subject layer) moves less, creating
+ * the illusion of depth separation.
+ */
 export const parallax: MotionFn = (ctx, img, t, opts) => {
-  const { width, height, easing } = opts;
+  const { width, height, focalX = 0.5, focalY = 0.5, intensity = 0.7, easing } = opts;
   const ease = getEasing(easing || 'ease-in-out');
   const et = ease(t);
-  const offsetX = (et - 0.5) * width * 0.08;
-  drawTransformed(ctx, img, width, height, 1.06, offsetX, 0);
+
+  // Background layer: moves more (full parallax offset)
+  const bgOffsetX = (et - 0.5) * width * 0.12 * intensity;
+  const bgOffsetY = (et - 0.5) * height * 0.04 * intensity;
+  drawTransformed(ctx, img, width, height, 1.15 * intensity + (1 - intensity), bgOffsetX, bgOffsetY);
+
+  // Subject layer: moves less (reduced parallax), focused on face
+  // Create a radial gradient mask centered on the focal point
+  const fxPx = focalX * width;
+  const fyPx = focalY * height;
+  const subjectRadius = Math.min(width, height) * 0.35;
+
+  ctx.save();
+
+  // Create a radial clip mask around the subject
+  const gradient = ctx.createRadialGradient(fxPx, fyPx, subjectRadius * 0.3, fxPx, fyPx, subjectRadius);
+  gradient.addColorStop(0, 'rgba(255,255,255,1)');
+  gradient.addColorStop(0.6, 'rgba(255,255,255,0.5)');
+  gradient.addColorStop(1, 'rgba(255,255,255,0)');
+
+  // Draw subject layer with less offset (parallax depth illusion)
+  const subjectOffsetX = (et - 0.5) * width * 0.03 * intensity;
+  const subjectOffsetY = (et - 0.5) * height * 0.01 * intensity;
+
+  ctx.globalCompositeOperation = 'source-atop';
+  drawTransformed(ctx, img, width, height, 1.08, subjectOffsetX, subjectOffsetY);
+
+  ctx.restore();
+
+  // Subtle depth-of-field blur effect on edges (simulate shallow DOF)
+  // Done via a dark vignette that gets slightly stronger during motion
+  const vignetteIntensity = 0.15 + Math.abs(et - 0.5) * 0.2 * intensity;
+  const vGrad = ctx.createRadialGradient(fxPx, fyPx, subjectRadius * 0.5, fxPx, fyPx, Math.max(width, height) * 0.7);
+  vGrad.addColorStop(0, 'rgba(0,0,0,0)');
+  vGrad.addColorStop(0.7, `rgba(0,0,0,${vignetteIntensity * 0.3})`);
+  vGrad.addColorStop(1, `rgba(0,0,0,${vignetteIntensity})`);
+  ctx.fillStyle = vGrad;
+  ctx.fillRect(0, 0, width, height);
+};
+
+/**
+ * Depth zoom — zooms into the subject (face) while the background
+ * stays relatively static, creating a dolly-zoom / vertigo effect.
+ */
+export const depthZoom: MotionFn = (ctx, img, t, opts) => {
+  const { width, height, focalX = 0.5, focalY = 0.5, intensity = 0.7, easing } = opts;
+  const ease = getEasing(easing || 'ease-in-out');
+  const et = ease(t);
+
+  // Zoom scale increases over time, focused on face
+  const scale = 1.0 + et * 0.25 * intensity;
+  const offsetX = (0.5 - focalX) * width * et * 0.3 * intensity;
+  const offsetY = (0.5 - focalY) * height * et * 0.3 * intensity;
+
+  drawTransformed(ctx, img, width, height, scale, offsetX, offsetY);
+
+  // Progressive vignette that tightens around the subject as we zoom in
+  const fxPx = focalX * width;
+  const fyPx = focalY * height;
+  const radius = Math.max(width, height) * (0.8 - et * 0.3 * intensity);
+  const vGrad = ctx.createRadialGradient(fxPx, fyPx, radius * 0.4, fxPx, fyPx, radius);
+  vGrad.addColorStop(0, 'rgba(0,0,0,0)');
+  vGrad.addColorStop(0.8, `rgba(0,0,0,${et * 0.15 * intensity})`);
+  vGrad.addColorStop(1, `rgba(0,0,0,${et * 0.35 * intensity})`);
+  ctx.fillStyle = vGrad;
+  ctx.fillRect(0, 0, width, height);
+};
+
+/**
+ * Float — subject gently floats/sways, mimicking a handheld camera
+ * with shallow depth of field. Uses focal point for centering.
+ */
+export const depthFloat: MotionFn = (ctx, img, t, opts) => {
+  const { width, height, focalX = 0.5, focalY = 0.5, intensity = 0.7, easing } = opts;
+  const ease = getEasing(easing || 'ease-in-out');
+  const et = ease(t);
+
+  // Gentle sinusoidal sway
+  const swayX = Math.sin(et * Math.PI * 2) * width * 0.02 * intensity;
+  const swayY = Math.cos(et * Math.PI * 1.5) * height * 0.015 * intensity;
+  const breathScale = 1.04 + Math.sin(et * Math.PI) * 0.02 * intensity;
+
+  // Center the sway on the focal point
+  const centerOffsetX = (0.5 - focalX) * width * 0.1 * intensity;
+  const centerOffsetY = (0.5 - focalY) * height * 0.1 * intensity;
+
+  drawTransformed(ctx, img, width, height, breathScale, swayX + centerOffsetX, swayY + centerOffsetY);
+
+  // Soft focus vignette around subject
+  const fxPx = focalX * width;
+  const fyPx = focalY * height;
+  const vGrad = ctx.createRadialGradient(fxPx, fyPx, Math.min(width, height) * 0.25, fxPx, fyPx, Math.max(width, height) * 0.65);
+  vGrad.addColorStop(0, 'rgba(0,0,0,0)');
+  vGrad.addColorStop(1, `rgba(0,0,0,${0.12 * intensity})`);
+  ctx.fillStyle = vGrad;
+  ctx.fillRect(0, 0, width, height);
 };
 
 /** Pan left */
@@ -492,6 +594,8 @@ export const MOTION_MAP: Record<string, MotionFn> = {
   'ken-burns': kenBurns,
   'slow-zoom': slowZoom,
   'parallax': parallax,
+  'depth-zoom': depthZoom,
+  'depth-float': depthFloat,
   'pan-left': panLeft,
   'pan-right': panRight,
   'bounce': bounce,
