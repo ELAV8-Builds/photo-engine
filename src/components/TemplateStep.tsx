@@ -286,8 +286,8 @@ function TimelineVisualization({
           </span>
         )}
         {mediaCountDiff > 0 && (
-          <span className="text-[10px] text-blue-400 bg-blue-400/10 px-2 py-0.5 rounded">
-            {mediaCountDiff} item{mediaCountDiff !== 1 ? 's' : ''} won&apos;t be used
+          <span className="text-[10px] text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded">
+            Template will expand to fit all {selectedMedia.length} items
           </span>
         )}
         {mediaCountDiff === 0 && selectedMedia.length > 0 && (
@@ -555,7 +555,9 @@ export default function TemplateStep({
                     {formatDuration(template.totalDuration)}
                   </span>
                   <span className="text-[10px] font-mono text-text-muted block">
-                    {template.mediaCount} items
+                    {selectedMedia.length > template.mediaCount
+                      ? `${template.mediaCount}→${selectedMedia.length}`
+                      : `${template.mediaCount} items`}
                   </span>
                 </div>
               </div>

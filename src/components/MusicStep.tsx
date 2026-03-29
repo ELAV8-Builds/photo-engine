@@ -1,16 +1,19 @@
 'use client';
 
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import { MusicTrack, MediaFile } from '@/types';
-import { SMART_TEMPLATES, formatDuration as fmtDuration } from '@/lib/templates';
+import { SMART_TEMPLATES, expandTemplateForMedia, formatDuration as fmtDuration } from '@/lib/templates';
 import { saveSongFromTrack, songExists, getSongCount } from '@/lib/song-library';
 import SongLibrary from './SongLibrary';
 
 interface MusicStepProps {
   music: MusicTrack | null;
   onMusicChange: (music: MusicTrack | null) => void;
+  /** Ordered list of all music tracks */
+  musicTracks?: MusicTrack[];
+  onMusicTracksChange?: (tracks: MusicTrack[]) => void;
   photos: MediaFile[];
-  durationPerPhoto?: number; // legacy — ignored if selectedTemplate is provided
+  durationPerPhoto?: number;
   selectedTemplate?: string | null;
   onNext: () => void;
   onBack: () => void;
@@ -19,6 +22,8 @@ interface MusicStepProps {
 export default function MusicStep({
   music,
   onMusicChange,
+  musicTracks = [],
+  onMusicTracksChange,
   photos,
   durationPerPhoto,
   selectedTemplate,
@@ -26,47 +31,78 @@ export default function MusicStep({
   onBack,
 }: MusicStepProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const audioRef = useRef<HTMLAudioElement>(null);
-  const [playing, setPlaying] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [playingId, setPlayingId] = useState<string | null>(null);
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [ytLoading, setYtLoading] = useState(false);
   const [ytError, setYtError] = useState('');
   const [showLibrary, setShowLibrary] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saveMessage, setSaveMessage] = useState('');
   const [librarySongCount, setLibrarySongCount] = useState(0);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
 
   const selectedMedia = photos.filter(p => p.selected);
-  const template = selectedTemplate ? SMART_TEMPLATES.find(t => t.id === selectedTemplate) : null;
+  const baseTemplate = selectedTemplate ? SMART_TEMPLATES.find(t => t.id === selectedTemplate) : null;
+  const template = baseTemplate ? expandTemplateForMedia(baseTemplate, selectedMedia.length) : null;
   const totalDuration = template ? template.totalDuration : selectedMedia.length * (durationPerPhoto ?? 3.5);
+
+  // Total music duration from all tracks
+  const totalMusicDuration = musicTracks.reduce((sum, t) => sum + t.duration, 0);
 
   // Load library count on mount
   useEffect(() => {
     getSongCount().then(setLibrarySongCount).catch(() => {});
   }, [showLibrary]);
 
+  // Keep `music` (first track) in sync with `musicTracks`
+  const updateTracks = useCallback((tracks: MusicTrack[]) => {
+    if (onMusicTracksChange) {
+      onMusicTracksChange(tracks);
+    }
+    // Set `music` to first track for backward compat (preview, etc.)
+    onMusicChange(tracks.length > 0 ? tracks[0] : null);
+  }, [onMusicChange, onMusicTracksChange]);
+
+  const addTrack = useCallback(async (track: MusicTrack) => {
+    const newTracks = [...musicTracks, track];
+    updateTracks(newTracks);
+
+    // Auto-save to library
+    try {
+      const exists = await songExists(track.name);
+      if (!exists) {
+        await saveSongFromTrack(track);
+        const count = await getSongCount();
+        setLibrarySongCount(count);
+      }
+    } catch (err) {
+      console.warn('[MusicStep] Auto-save failed:', err);
+    }
+  }, [musicTracks, updateTracks]);
+
   const handleFileUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    const file = files[0];
-    if (!file.type.startsWith('audio/')) return;
 
-    const url = URL.createObjectURL(file);
-    const duration = await getAudioDuration(url);
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (!file.type.startsWith('audio/')) continue;
 
-    onMusicChange({
-      id: `music-${Date.now()}`,
-      name: file.name,
-      file,
-      url,
-      duration,
-      source: 'upload',
-    });
+      const url = URL.createObjectURL(file);
+      const duration = await getAudioDuration(url);
+
+      await addTrack({
+        id: `music-${Date.now()}-${i}`,
+        name: file.name,
+        file,
+        url,
+        duration,
+        source: 'upload',
+      });
+    }
   };
 
   const handleYoutubeRip = async () => {
     if (!youtubeUrl.trim() || ytLoading) return;
 
-    // Validate URL
     const ytRegex = /^(https?:\/\/)?(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)/;
     if (!ytRegex.test(youtubeUrl)) {
       setYtError('Please enter a valid YouTube URL');
@@ -89,13 +125,15 @@ export default function MusicStep({
       }
 
       const data = await res.json();
-      onMusicChange({
+      const ytTrack: MusicTrack = {
         id: `yt-${Date.now()}`,
         name: typeof data.title === 'string' ? data.title : 'YouTube Audio',
         url: typeof data.url === 'string' ? data.url : '',
         duration: typeof data.duration === 'number' ? data.duration : 0,
         source: 'youtube',
-      });
+      };
+
+      await addTrack(ytTrack);
       setYoutubeUrl('');
     } catch (e) {
       setYtError(e instanceof Error ? e.message : 'Extraction failed. Is yt-dlp installed on the server?');
@@ -104,63 +142,59 @@ export default function MusicStep({
     }
   };
 
-  const handleSaveToLibrary = async () => {
-    if (!music || saving) return;
-
-    setSaving(true);
-    setSaveMessage('');
-
-    try {
-      // Check if already exists
-      const exists = await songExists(music.name);
-      if (exists) {
-        setSaveMessage('Already in library');
-        setTimeout(() => setSaveMessage(''), 3000);
-        return;
-      }
-
-      await saveSongFromTrack(music);
-      setSaveMessage('Saved to library!');
-      const count = await getSongCount();
-      setLibrarySongCount(count);
-      setTimeout(() => setSaveMessage(''), 3000);
-    } catch (err) {
-      console.error('[MusicStep] Failed to save to library:', err);
-      setSaveMessage('Save failed');
-      setTimeout(() => setSaveMessage(''), 3000);
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const handleSelectFromLibrary = (track: MusicTrack) => {
-    onMusicChange(track);
+    addTrack(track);
     setShowLibrary(false);
   };
 
-  const removeMusic = () => {
-    if (music?.file) URL.revokeObjectURL(music.url);
-    onMusicChange(null);
-    setPlaying(false);
+  const removeTrack = (id: string) => {
+    const track = musicTracks.find(t => t.id === id);
+    if (track?.file) URL.revokeObjectURL(track.url);
+    updateTracks(musicTracks.filter(t => t.id !== id));
+    if (playingId === id) {
+      if (audioRef.current) audioRef.current.pause();
+      setPlayingId(null);
+    }
   };
 
-  const togglePlay = () => {
-    if (!audioRef.current) return;
-    if (playing) {
-      audioRef.current.pause();
-    } else {
-      audioRef.current.play();
+  const togglePlay = (track: MusicTrack) => {
+    if (playingId === track.id) {
+      if (audioRef.current) audioRef.current.pause();
+      setPlayingId(null);
+      return;
     }
-    setPlaying(!playing);
+    if (audioRef.current) audioRef.current.pause();
+    const audio = new Audio(track.file ? URL.createObjectURL(track.file) : track.url);
+    audioRef.current = audio;
+    audio.onended = () => setPlayingId(null);
+    audio.play().catch(() => {});
+    setPlayingId(track.id);
   };
+
+  const moveTrack = (fromIdx: number, toIdx: number) => {
+    if (fromIdx === toIdx) return;
+    const newTracks = [...musicTracks];
+    const [moved] = newTracks.splice(fromIdx, 1);
+    newTracks.splice(toIdx, 0, moved);
+    updateTracks(newTracks);
+  };
+
+  // Drag handlers for reordering
+  const handleDragStart = (idx: number) => setDragIdx(idx);
+  const handleDragOver = (e: React.DragEvent, idx: number) => {
+    e.preventDefault();
+    if (dragIdx !== null && dragIdx !== idx) {
+      moveTrack(dragIdx, idx);
+      setDragIdx(idx);
+    }
+  };
+  const handleDragEnd = () => setDragIdx(null);
 
   useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    const handleEnd = () => setPlaying(false);
-    audio.addEventListener('ended', handleEnd);
-    return () => audio.removeEventListener('ended', handleEnd);
-  }, [music]);
+    return () => {
+      if (audioRef.current) audioRef.current.pause();
+    };
+  }, []);
 
   return (
     <div className="space-y-6 step-content">
@@ -169,136 +203,179 @@ export default function MusicStep({
         <p className="text-sm text-text-muted">
           Video length: <span className="text-accent-gold font-mono">{fmtDuration(totalDuration)}</span>
           {template && <span className="text-text-muted"> ({template.name})</span>}
-          {' '}&mdash; Music is optional
+          {' '}&mdash; Add one or more songs. They play in order.
         </p>
       </div>
 
-      {/* Current track */}
-      {music && (
-        <div className="card-glow p-5">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={togglePlay}
-              className="w-12 h-12 rounded-full bg-accent-gold/10 border border-accent-gold/30 flex items-center justify-center flex-shrink-0 hover:bg-accent-gold/20 transition-colors"
-              aria-label={playing ? 'Pause' : 'Play'}
-            >
-              {playing ? (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" className="text-accent-gold">
-                  <rect x="6" y="4" width="4" height="16" />
-                  <rect x="14" y="4" width="4" height="16" />
-                </svg>
-              ) : (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" className="text-accent-gold ml-0.5">
-                  <polygon points="5 3 19 12 5 21" />
-                </svg>
-              )}
-            </button>
-
-            <div className="flex-1 min-w-0">
-              <p className="text-sm text-white font-semibold truncate">{music.name}</p>
-              <div className="flex items-center gap-3 mt-0.5">
-                <span className="text-xs text-text-muted font-mono">
-                  {formatDuration(music.duration)}
-                </span>
-                <span className="text-xs text-accent-gold/60 bg-accent-gold/10 px-2 py-0.5 rounded-full capitalize">
-                  {music.source}
-                </span>
-              </div>
-            </div>
-
-            {/* Save to Library button */}
-            <button
-              onClick={handleSaveToLibrary}
-              disabled={saving}
-              className="text-text-muted hover:text-purple-400 transition-colors p-2 relative group"
-              aria-label="Save to library"
-              title="Save to library"
-            >
-              {saving ? (
-                <div className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 2L2 7l10 5 10-5-10-5z" />
-                  <path d="M2 17l10 5 10-5" />
-                  <path d="M2 12l10 5 10-5" />
-                </svg>
-              )}
-            </button>
-
-            <button
-              onClick={removeMusic}
-              className="text-text-muted hover:text-red-400 transition-colors p-2"
-              aria-label="Remove track"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
+      {/* Track List */}
+      {musicTracks.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-text-muted font-medium">
+              Playlist ({musicTracks.length} song{musicTracks.length !== 1 ? 's' : ''})
+            </p>
+            <span className="text-xs text-accent-gold font-mono">
+              {fmtDuration(totalMusicDuration)} total
+            </span>
           </div>
 
-          {/* Save confirmation message */}
-          {saveMessage && (
-            <div className={`mt-2 text-xs font-medium text-center py-1 px-3 rounded-full ${
-              saveMessage.includes('Saved') ? 'text-green-400 bg-green-500/10' :
-              saveMessage.includes('Already') ? 'text-yellow-400 bg-yellow-500/10' :
-              'text-red-400 bg-red-500/10'
-            }`}>
-              {saveMessage}
-            </div>
-          )}
+          {musicTracks.map((track, idx) => (
+            <div
+              key={track.id}
+              draggable
+              onDragStart={() => handleDragStart(idx)}
+              onDragOver={(e) => handleDragOver(e, idx)}
+              onDragEnd={handleDragEnd}
+              className={`card-glow p-3 flex items-center gap-3 transition-all ${
+                dragIdx === idx ? 'opacity-50 scale-95' : ''
+              }`}
+              style={{ cursor: 'grab' }}
+            >
+              {/* Drag handle */}
+              <div className="flex flex-col gap-0.5 text-text-muted cursor-grab active:cursor-grabbing">
+                <div className="w-4 h-0.5 bg-text-muted/40 rounded" />
+                <div className="w-4 h-0.5 bg-text-muted/40 rounded" />
+                <div className="w-4 h-0.5 bg-text-muted/40 rounded" />
+              </div>
 
-          {music.url && <audio ref={audioRef} src={music.url} preload="metadata" />}
+              {/* Order number */}
+              <span className="text-xs text-accent-gold font-mono font-bold w-5 text-center">
+                {idx + 1}
+              </span>
+
+              {/* Play button */}
+              <button
+                onClick={(e) => { e.stopPropagation(); togglePlay(track); }}
+                className="w-9 h-9 rounded-full bg-accent-gold/10 border border-accent-gold/30 flex items-center justify-center flex-shrink-0 hover:bg-accent-gold/20 transition-colors"
+                aria-label={playingId === track.id ? 'Pause' : 'Play'}
+              >
+                {playingId === track.id ? (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" className="text-accent-gold">
+                    <rect x="6" y="4" width="4" height="16" />
+                    <rect x="14" y="4" width="4" height="16" />
+                  </svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" className="text-accent-gold ml-0.5">
+                    <polygon points="5 3 19 12 5 21" />
+                  </svg>
+                )}
+              </button>
+
+              {/* Track info */}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-white font-medium truncate">{track.name}</p>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-xs text-text-muted font-mono">{formatDuration(track.duration)}</span>
+                  <span className="text-[10px] text-accent-gold/60 bg-accent-gold/10 px-1.5 py-0.5 rounded-full capitalize">
+                    {track.source}
+                  </span>
+                </div>
+              </div>
+
+              {/* Move buttons */}
+              <div className="flex flex-col gap-0.5">
+                <button
+                  onClick={(e) => { e.stopPropagation(); if (idx > 0) moveTrack(idx, idx - 1); }}
+                  disabled={idx === 0}
+                  className="text-text-muted hover:text-white disabled:opacity-20 p-0.5"
+                  aria-label="Move up"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="18 15 12 9 6 15" />
+                  </svg>
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); if (idx < musicTracks.length - 1) moveTrack(idx, idx + 1); }}
+                  disabled={idx === musicTracks.length - 1}
+                  className="text-text-muted hover:text-white disabled:opacity-20 p-0.5"
+                  aria-label="Move down"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Remove button */}
+              <button
+                onClick={(e) => { e.stopPropagation(); removeTrack(track.id); }}
+                className="text-text-muted hover:text-red-400 transition-colors p-1.5"
+                aria-label="Remove track"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+          ))}
 
           {/* Duration comparison */}
-          {music.duration > 0 && (
-            <div className="mt-3 pt-3 border-t border-border-subtle">
-              <div className="flex items-center justify-between text-xs text-text-muted mb-1.5">
-                <span>Music vs Video</span>
-                <span className="font-mono">
-                  {music.duration > totalDuration
-                    ? `Music ${fmtDuration(music.duration - totalDuration)} longer — will be trimmed`
-                    : music.duration < totalDuration
-                    ? `Music ${fmtDuration(totalDuration - music.duration)} shorter — will loop`
-                    : 'Perfect match!'}
-                </span>
-              </div>
-              <div className="flex gap-1 items-center">
-                <div className="flex-1 h-2 rounded bg-bg-input overflow-hidden">
-                  <div
-                    className="h-full rounded"
-                    style={{
-                      width: `${Math.min(100, (totalDuration / Math.max(music.duration, totalDuration)) * 100)}%`,
-                      background: 'linear-gradient(90deg, #FFD700, #FFBF00)',
-                    }}
-                  />
-                </div>
-                <span className="text-[10px] font-mono text-accent-gold w-10 text-right">{fmtDuration(totalDuration)}</span>
-              </div>
-              <div className="flex gap-1 items-center mt-1">
-                <div className="flex-1 h-2 rounded bg-bg-input overflow-hidden">
-                  <div
-                    className="h-full rounded"
-                    style={{
-                      width: `${Math.min(100, (music.duration / Math.max(music.duration, totalDuration)) * 100)}%`,
-                      background: 'linear-gradient(90deg, #60A5FA, #3B82F6)',
-                    }}
-                  />
-                </div>
-                <span className="text-[10px] font-mono text-blue-400 w-10 text-right">{fmtDuration(music.duration)}</span>
-              </div>
-              <div className="flex items-center gap-3 mt-1.5 text-[10px] text-text-muted">
-                <span className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-sm" style={{ background: '#FFD700' }} />
-                  Video
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-sm" style={{ background: '#60A5FA' }} />
-                  Music
-                </span>
-              </div>
+          <div className="card-glow p-3">
+            <div className="flex items-center justify-between text-xs text-text-muted mb-1.5">
+              <span>Music vs Video</span>
+              <span className="font-mono">
+                {totalMusicDuration > totalDuration
+                  ? `Music ${fmtDuration(totalMusicDuration - totalDuration)} longer — will be trimmed`
+                  : totalMusicDuration < totalDuration
+                  ? `Music ${fmtDuration(totalDuration - totalMusicDuration)} shorter — last track will loop`
+                  : 'Perfect match!'}
+              </span>
             </div>
-          )}
+            <div className="flex gap-1 items-center">
+              <div className="flex-1 h-2 rounded bg-bg-input overflow-hidden">
+                <div
+                  className="h-full rounded"
+                  style={{
+                    width: `${Math.min(100, (totalDuration / Math.max(totalMusicDuration, totalDuration)) * 100)}%`,
+                    background: 'linear-gradient(90deg, #FFD700, #FFBF00)',
+                  }}
+                />
+              </div>
+              <span className="text-[10px] font-mono text-accent-gold w-10 text-right">{fmtDuration(totalDuration)}</span>
+            </div>
+            <div className="flex gap-1 items-center mt-1">
+              <div className="flex-1 h-2 rounded bg-bg-input overflow-hidden relative">
+                {/* Show each track as a segment */}
+                <div className="flex h-full">
+                  {musicTracks.map((track, i) => {
+                    const pct = totalMusicDuration > 0
+                      ? (track.duration / Math.max(totalMusicDuration, totalDuration)) * 100
+                      : 0;
+                    const colors = ['#60A5FA', '#A78BFA', '#F472B6', '#34D399', '#FBBF24'];
+                    return (
+                      <div
+                        key={track.id}
+                        className="h-full"
+                        style={{
+                          width: `${pct}%`,
+                          background: colors[i % colors.length],
+                          borderRight: i < musicTracks.length - 1 ? '1px solid rgba(0,0,0,0.3)' : undefined,
+                        }}
+                        title={`${track.name} (${formatDuration(track.duration)})`}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+              <span className="text-[10px] font-mono text-blue-400 w-10 text-right">{fmtDuration(totalMusicDuration)}</span>
+            </div>
+            <div className="flex items-center gap-3 mt-1.5 text-[10px] text-text-muted">
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-sm" style={{ background: '#FFD700' }} />
+                Video
+              </span>
+              {musicTracks.map((track, i) => {
+                const colors = ['#60A5FA', '#A78BFA', '#F472B6', '#34D399', '#FBBF24'];
+                return (
+                  <span key={track.id} className="flex items-center gap-1 truncate max-w-[100px]">
+                    <span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ background: colors[i % colors.length] }} />
+                    <span className="truncate">{track.name}</span>
+                  </span>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
 
@@ -310,10 +387,10 @@ export default function MusicStep({
         />
       )}
 
-      {/* Upload options */}
-      {!music && !showLibrary && (
+      {/* Upload options — always visible to add more songs */}
+      {!showLibrary && (
         <div className="space-y-4">
-          {/* Library button — shown above upload options */}
+          {/* Library button */}
           {librarySongCount > 0 && (
             <button
               onClick={() => setShowLibrary(true)}
@@ -339,7 +416,7 @@ export default function MusicStep({
           )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* File upload */}
+            {/* File upload — supports multiple files */}
             <div
               onClick={() => fileInputRef.current?.click()}
               className="card-glow p-6 text-center cursor-pointer hover:shadow-gold-sm transition-all group"
@@ -351,6 +428,7 @@ export default function MusicStep({
                 ref={fileInputRef}
                 type="file"
                 accept="audio/*"
+                multiple
                 onChange={(e) => handleFileUpload(e.target.files)}
                 className="hidden"
               />
@@ -361,8 +439,10 @@ export default function MusicStep({
                   <circle cx="18" cy="16" r="3" />
                 </svg>
               </div>
-              <p className="text-sm text-white font-semibold">Upload Audio File</p>
-              <p className="text-xs text-text-muted mt-1">MP3, WAV, AAC, OGG</p>
+              <p className="text-sm text-white font-semibold">
+                {musicTracks.length > 0 ? 'Add More Songs' : 'Upload Audio Files'}
+              </p>
+              <p className="text-xs text-text-muted mt-1">MP3, WAV, AAC, OGG — select multiple</p>
             </div>
 
             {/* YouTube */}
@@ -408,7 +488,7 @@ export default function MusicStep({
           Back
         </button>
         <button onClick={onNext} className="btn-gold inline-flex items-center gap-2">
-          {music ? 'Review & Export' : 'Skip Music & Export'}
+          {musicTracks.length > 0 ? 'Review & Export' : 'Skip Music & Export'}
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <line x1="5" y1="12" x2="19" y2="12" />
             <polyline points="12 5 19 12 12 19" />

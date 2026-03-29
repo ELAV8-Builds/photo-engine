@@ -1,4 +1,4 @@
-import { SmartTemplate, Template } from '@/types';
+import { SmartTemplate, Template, TemplateSlot } from '@/types';
 
 /**
  * Smart Templates v4 — pre-built timelines with the full v4 effects vocabulary.
@@ -1282,6 +1282,76 @@ export function assignMediaToSlots(
     assigned.push(mediaIds[i % mediaIds.length]);
   }
   return assigned;
+}
+
+/**
+ * Expand a template to accommodate more media than its base slot count.
+ *
+ * When the user has 60 photos but the template only has 8 slots, this
+ * repeats the template's slot pattern (with varied text overlays) to
+ * create enough slots for ALL media. The template's visual style,
+ * transitions, effects, and theme are preserved.
+ *
+ * If mediaCount <= template.slots.length, returns the original template.
+ * If targetDuration is provided, adjusts per-slot durations to hit that target.
+ */
+export function expandTemplateForMedia(
+  template: SmartTemplate,
+  mediaCount: number,
+  targetDuration?: number,
+): SmartTemplate {
+  if (mediaCount <= template.slots.length) return template;
+
+  const baseSlots = template.slots;
+  const baseCount = baseSlots.length;
+  const expandedSlots: TemplateSlot[] = [];
+
+  // Cycle through the base slots to fill all media
+  for (let i = 0; i < mediaCount; i++) {
+    const sourceSlot = baseSlots[i % baseCount];
+    const clonedSlot: TemplateSlot = {
+      ...sourceSlot,
+      // Deep-clone postEffects array
+      postEffects: sourceSlot.postEffects?.map(e => ({ ...e, params: e.params ? { ...e.params } : undefined })),
+      // Deep-clone textOverlay
+      textOverlay: sourceSlot.textOverlay ? { ...sourceSlot.textOverlay } : undefined,
+    };
+
+    // For slots beyond the base template, vary the text overlays to avoid repetition
+    if (i >= baseCount && clonedSlot.textOverlay) {
+      // Only show text on ~30% of extended slots to avoid visual fatigue
+      const showText = (i % 3 === 0);
+      if (!showText) {
+        clonedSlot.textOverlay = undefined;
+      }
+    }
+
+    expandedSlots.push(clonedSlot);
+  }
+
+  // Calculate new total duration
+  let newTotalDuration: number;
+  if (targetDuration && targetDuration > 0) {
+    // Fit to target duration (e.g., song length)
+    const perSlotDuration = targetDuration / mediaCount;
+    const minDuration = 1.5; // Never go below 1.5s per slot
+    const effectiveDuration = Math.max(perSlotDuration, minDuration);
+
+    for (const slot of expandedSlots) {
+      slot.duration = Math.round(effectiveDuration * 10) / 10;
+    }
+    newTotalDuration = expandedSlots.reduce((sum, s) => sum + s.duration, 0);
+  } else {
+    // Use the average duration from the base template
+    newTotalDuration = expandedSlots.reduce((sum, s) => sum + s.duration, 0);
+  }
+
+  return {
+    ...template,
+    slots: expandedSlots,
+    mediaCount,
+    totalDuration: Math.round(newTotalDuration * 10) / 10,
+  };
 }
 
 /**

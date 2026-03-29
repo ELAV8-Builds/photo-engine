@@ -57,6 +57,17 @@ export default function MediaStep({ media, onMediaChange, onNext }: MediaStepPro
         try {
           const videoInfo = await getVideoInfo(url);
 
+          // Run face detection on the video thumbnail frame
+          setProcessingMessage(`Detecting faces in video ${i + 1}/${mediaFiles.length}: ${file.name}`);
+          let videoFaces: import('@/types').FaceRegion[] = [];
+          if (videoInfo.thumbnailUrl) {
+            try {
+              videoFaces = await detectFaces(videoInfo.thumbnailUrl);
+            } catch {
+              // Face detection may fail on some video thumbnails
+            }
+          }
+
           newMedia.push({
             id: `media-${Date.now()}-${i}`,
             file,
@@ -65,7 +76,7 @@ export default function MediaStep({ media, onMediaChange, onNext }: MediaStepPro
             width: videoInfo.width,
             height: videoInfo.height,
             selected: true,
-            faces: [],
+            faces: videoFaces,
             order: existingCount + i,
             type: 'video',
             duration: videoInfo.duration,
@@ -197,7 +208,7 @@ export default function MediaStep({ media, onMediaChange, onNext }: MediaStepPro
   };
 
   const selectedCount = media.filter(m => m.selected).length;
-  const facesDetected = media.reduce((sum, m) => sum + (m.selected && m.type === 'photo' ? m.faces.length : 0), 0);
+  const facesDetected = media.reduce((sum, m) => sum + (m.selected ? m.faces.length : 0), 0);
   const videoCount = media.filter(m => m.type === 'video').length;
 
   return (
@@ -385,8 +396,8 @@ export default function MediaStep({ media, onMediaChange, onNext }: MediaStepPro
                   </span>
                 )}
 
-                {/* Face indicator (photos only) */}
-                {item.type === 'photo' && item.faces.length > 0 && (
+                {/* Face indicator (photos and videos) */}
+                {item.faces.length > 0 && (
                   <span
                     className="absolute top-1 left-1 bg-accent-gold/90 text-bg-main text-[9px] font-bold px-1.5 py-0.5 rounded-full"
                     title={`${item.faces.length} face(s) detected`}

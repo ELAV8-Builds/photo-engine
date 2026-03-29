@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { MediaFile, MusicTrack, RenderProgress, SmartTemplate, TemplateSlot, TemplateTheme, TextOverlay } from '@/types';
-import { SMART_TEMPLATES, assignMediaToSlots, formatDuration } from '@/lib/templates';
+import { SMART_TEMPLATES, assignMediaToSlots, expandTemplateForMedia, formatDuration } from '@/lib/templates';
 import { createParticles, updateParticles, drawParticles, drawVignette, drawTintOverlay, getParticleCSS, Particle } from '@/lib/particles';
 import { drawTextOverlay } from '@/lib/text-renderer';
 import { EffectsEngine, templateSlotToEngineSlot, type SlotConfig } from '@/lib/effects-engine';
@@ -21,6 +21,10 @@ interface RenderStepProps {
   onBack: () => void;
   textOverrides?: Record<number, string | null>;
   mixerOverrides?: MixerOverrides;
+  /** Called when export completes successfully — used for auto-saving project */
+  onExportComplete?: () => void;
+  /** Full playlist of music tracks for export (played in sequence) */
+  musicTracks?: MusicTrack[];
 }
 
 export default function RenderStep(props: RenderStepProps) {
@@ -34,6 +38,8 @@ export default function RenderStep(props: RenderStepProps) {
     outputQuality,
     onQualityChange,
     onBack,
+    onExportComplete,
+    musicTracks = [],
   } = props;
   const textOverrides = props.textOverrides ?? {};
   const mixerOverrides = props.mixerOverrides ?? {};
@@ -54,9 +60,18 @@ export default function RenderStep(props: RenderStepProps) {
   const previewImagesRef = useRef<Map<string, HTMLImageElement>>(new Map());
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const [audioPlaying, setAudioPlaying] = useState(false);
+  const [audioReady, setAudioReady] = useState(false);
+  const hasUserInteracted = useRef(false);
 
   const selectedMedia = useMemo(() => photos.filter(p => p.selected), [photos]);
-  const template = SMART_TEMPLATES.find(t => t.id === selectedTemplate) || null;
+  const baseTemplate = SMART_TEMPLATES.find(t => t.id === selectedTemplate) || null;
+
+  // Expand template to fit all selected media (e.g., 60 photos → 60 slots)
+  const template = useMemo(() => {
+    if (!baseTemplate) return null;
+    const targetDuration = music?.duration && music.duration > 0 ? music.duration : undefined;
+    return expandTemplateForMedia(baseTemplate, selectedMedia.length, targetDuration);
+  }, [baseTemplate, selectedMedia.length, music?.duration]);
 
   const mediaIds = useMemo(() => selectedMedia.map(m => m.id), [selectedMedia]);
   const slotAssignments = useMemo(
@@ -165,14 +180,44 @@ export default function RenderStep(props: RenderStepProps) {
         if (previewAudioRef.current) {
           previewAudioRef.current.pause();
           previewAudioRef.current = null;
+          setAudioPlaying(false);
         }
-        const audio = new Audio(music.url);
+        const audio = new Audio();
+        audio.crossOrigin = 'anonymous';
         audio.loop = true;
         audio.volume = 0.6;
+        audio.preload = 'auto';
+
+        // Set up event listeners before setting src
+        audio.addEventListener('canplaythrough', () => {
+          setAudioReady(true);
+          // Try auto-play (works if user has already interacted with the page)
+          audio.play()
+            .then(() => setAudioPlaying(true))
+            .catch(() => {
+              // Browser blocked autoplay — that's fine, user can click play
+              console.log('[Audio] Autoplay blocked, waiting for user interaction');
+            });
+        }, { once: true });
+
+        audio.addEventListener('error', (e) => {
+          console.warn('[Audio] Failed to load audio:', e);
+          setAudioReady(false);
+        });
+
+        // If music has a File object, create a fresh blob URL from it for reliability
+        if (music.file) {
+          const freshUrl = URL.createObjectURL(music.file);
+          audio.src = freshUrl;
+          // Clean up this URL when audio is done
+          audio.addEventListener('emptied', () => URL.revokeObjectURL(freshUrl), { once: true });
+        } else {
+          audio.src = music.url;
+        }
+
         previewAudioRef.current = audio;
-        // Don't auto-play — wait for user interaction (browser autoplay policy)
-      } catch {
-        // Audio may fail silently — that's OK
+      } catch (err) {
+        console.warn('[Audio] Setup failed:', err);
       }
     }
 
@@ -221,8 +266,10 @@ export default function RenderStep(props: RenderStepProps) {
       cancelAnimationFrame(previewAnimRef.current);
       if (previewAudioRef.current) {
         previewAudioRef.current.pause();
+        previewAudioRef.current.src = '';
         previewAudioRef.current = null;
         setAudioPlaying(false);
+        setAudioReady(false);
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -340,22 +387,43 @@ export default function RenderStep(props: RenderStepProps) {
 
       const stream = canvas.captureStream(30);
 
-      // Add audio track if available
-      if (music?.url) {
+      // Add audio track(s) — stitches multiple tracks in sequence
+      const tracksToUse = musicTracks.length > 0 ? musicTracks : (music ? [music] : []);
+      if (tracksToUse.length > 0) {
         try {
-          const audioEl = new Audio(music.url);
-          audioEl.crossOrigin = 'anonymous';
           const audioCtx = new AudioContext();
-          const source = audioCtx.createMediaElementSource(audioEl);
           const dest = audioCtx.createMediaStreamDestination();
-          source.connect(dest);
-          source.connect(audioCtx.destination);
+
+          // Load all audio buffers
+          const buffers: AudioBuffer[] = [];
+          for (const t of tracksToUse) {
+            try {
+              const audioUrl = t.file ? URL.createObjectURL(t.file) : t.url;
+              const response = await fetch(audioUrl);
+              const arrayBuf = await response.arrayBuffer();
+              const decoded = await audioCtx.decodeAudioData(arrayBuf);
+              buffers.push(decoded);
+              if (t.file) URL.revokeObjectURL(audioUrl);
+            } catch {
+              console.warn('[Export] Failed to decode audio track:', t.name);
+            }
+          }
+
+          // Schedule tracks in sequence
+          let startOffset = 0;
+          for (const buffer of buffers) {
+            const source = audioCtx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(dest);
+            source.start(audioCtx.currentTime + startOffset);
+            startOffset += buffer.duration;
+          }
+
           for (const track of dest.stream.getAudioTracks()) {
             stream.addTrack(track);
           }
-          audioEl.play();
         } catch {
-          // Audio mixing may fail due to CORS, continue without audio
+          // Audio mixing may fail, continue without audio
         }
       }
 
@@ -439,6 +507,15 @@ export default function RenderStep(props: RenderStepProps) {
         message: 'Export complete!',
         outputUrl: url,
       });
+
+      // Auto-save project on successful export
+      if (onExportComplete) {
+        try {
+          onExportComplete();
+        } catch {
+          // Don't let project save failure affect export success
+        }
+      }
     } catch (e) {
       setProgress({
         status: 'error',
@@ -469,8 +546,18 @@ export default function RenderStep(props: RenderStepProps) {
           {selectedMedia.length > 0 && template ? (
             <canvas
               ref={previewCanvasRef}
-              className="absolute inset-0 w-full h-full"
+              className="absolute inset-0 w-full h-full cursor-pointer"
               style={{ imageRendering: 'auto' }}
+              onClick={() => {
+                // Start audio on first canvas click (satisfies browser autoplay policy)
+                if (!hasUserInteracted.current) {
+                  hasUserInteracted.current = true;
+                  const audio = previewAudioRef.current;
+                  if (audio && !audioPlaying) {
+                    audio.play().then(() => setAudioPlaying(true)).catch(() => {});
+                  }
+                }
+              }}
             />
           ) : (
             <div className="absolute inset-0 flex items-center justify-center">
@@ -515,35 +602,60 @@ export default function RenderStep(props: RenderStepProps) {
             </div>
           )}
 
-          {/* Audio play/pause button */}
+          {/* Audio controls — prominent bar at bottom of preview */}
           {music && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                const audio = previewAudioRef.current;
-                if (!audio) return;
-                if (audioPlaying) {
-                  audio.pause();
-                  setAudioPlaying(false);
-                } else {
-                  audio.play().then(() => setAudioPlaying(true)).catch(() => {});
-                }
-              }}
-              className="absolute bottom-16 right-3 w-10 h-10 rounded-full bg-black/60 backdrop-blur-sm border border-white/20 flex items-center justify-center hover:bg-black/80 hover:border-accent-gold/40 transition-all z-10"
-              aria-label={audioPlaying ? 'Pause music' : 'Play music'}
-              title={audioPlaying ? 'Pause music' : 'Play music'}
-            >
-              {audioPlaying ? (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
-                  <rect x="6" y="4" width="4" height="16" rx="1" />
-                  <rect x="14" y="4" width="4" height="16" rx="1" />
-                </svg>
-              ) : (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-                  <path d="M9 18V5l12 7z" fill="white" />
-                </svg>
+            <div className="absolute bottom-[60px] left-3 right-3 z-10 flex items-center gap-2">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  hasUserInteracted.current = true;
+                  const audio = previewAudioRef.current;
+                  if (!audio) return;
+                  if (audioPlaying) {
+                    audio.pause();
+                    setAudioPlaying(false);
+                  } else {
+                    audio.play().then(() => setAudioPlaying(true)).catch((err) => {
+                      console.warn('[Audio] Play failed:', err);
+                    });
+                  }
+                }}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-md border transition-all ${
+                  audioPlaying
+                    ? 'bg-accent-gold/20 border-accent-gold/40 text-accent-gold'
+                    : 'bg-black/60 border-white/20 text-white hover:bg-black/80 hover:border-accent-gold/40 animate-pulse'
+                }`}
+                aria-label={audioPlaying ? 'Pause music' : 'Play music'}
+              >
+                {audioPlaying ? (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                    <rect x="6" y="4" width="4" height="16" rx="1" />
+                    <rect x="14" y="4" width="4" height="16" rx="1" />
+                  </svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M9 18V5l12 7z" />
+                  </svg>
+                )}
+                <span className="text-[10px] font-bold">
+                  {audioPlaying ? '♫ Playing' : '♫ Play Music'}
+                </span>
+              </button>
+              {audioPlaying && (
+                <div className="flex-1 flex items-center gap-1">
+                  {[...Array(12)].map((_, i) => (
+                    <div
+                      key={i}
+                      className="flex-1 h-3 bg-accent-gold/40 rounded-full"
+                      style={{
+                        animation: `audioBar 0.8s ease-in-out ${i * 0.1}s infinite alternate`,
+                        height: `${4 + Math.random() * 8}px`,
+                      }}
+                    />
+                  ))}
+                </div>
               )}
-            </button>
+            </div>
           )}
 
           {/* Overlay info */}

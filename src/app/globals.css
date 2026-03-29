@@ -321,6 +321,12 @@ body {
   animation: fadeSlideUp 0.3s ease-out, fadeOut 0.3s ease-in 2.7s forwards;
 }
 
+/* Audio visualization bars */
+@keyframes audioBar {
+  0% { transform: scaleY(0.3); }
+  100% { transform: scaleY(1); }
+}
+
 /* Reduce motion */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

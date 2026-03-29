@@ -20,6 +20,7 @@ function HomeContent() {
   const [media, setMedia] = useState<MediaFile[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [music, setMusic] = useState<MusicTrack | null>(null);
+  const [musicTracks, setMusicTracks] = useState<MusicTrack[]>([]);
   const [title, setTitle] = useState('');
   const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16' | '1:1'>('16:9');
   const [outputQuality, setOutputQuality] = useState<'720p' | '1080p' | '4k'>('1080p');
@@ -172,6 +173,8 @@ function HomeContent() {
           <MusicStep
             music={music}
             onMusicChange={setMusic}
+            musicTracks={musicTracks}
+            onMusicTracksChange={setMusicTracks}
             photos={media}
             selectedTemplate={selectedTemplate}
             onNext={() => setStep('render')}
@@ -192,6 +195,8 @@ function HomeContent() {
             textOverrides={textOverrides}
             mixerOverrides={mixerOverrides}
             onBack={() => setStep('music')}
+            onExportComplete={handleSaveProject}
+            musicTracks={musicTracks}
           />
         )}
       </main>
