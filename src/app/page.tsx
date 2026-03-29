@@ -16,6 +16,7 @@ export default function Home() {
   const [title, setTitle] = useState('');
   const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16' | '1:1'>('16:9');
   const [outputQuality, setOutputQuality] = useState<'720p' | '1080p' | '4k'>('1080p');
+  const [textOverrides, setTextOverrides] = useState<Record<number, string | null>>({});
 
   const selectedCount = media.filter(p => p.selected).length;
 
@@ -46,10 +47,12 @@ export default function Home() {
         {step === 'template' && (
           <TemplateStep
             selectedTemplate={selectedTemplate}
-            onSelectTemplate={setSelectedTemplate}
+            onSelectTemplate={(id) => { setSelectedTemplate(id); setTextOverrides({}); }}
             media={media}
             aspectRatio={aspectRatio}
             onAspectChange={setAspectRatio}
+            textOverrides={textOverrides}
+            onTextOverridesChange={setTextOverrides}
             onNext={() => setStep('music')}
             onBack={() => setStep('media')}
           />
@@ -73,10 +76,10 @@ export default function Home() {
             music={music}
             title={title}
             onTitleChange={setTitle}
-            durationPerPhoto={3.5}
             aspectRatio={aspectRatio}
             outputQuality={outputQuality}
             onQualityChange={setOutputQuality}
+            textOverrides={textOverrides}
             onBack={() => setStep('music')}
           />
         )}
@@ -84,7 +87,7 @@ export default function Home() {
 
       <footer className="border-t border-border-subtle py-4">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 flex items-center justify-between text-xs text-text-muted">
-          <span className="font-mono">PHOTOFORGE v2.0</span>
+          <span className="font-mono">PHOTOFORGE v3.0</span>
           <span>Built by ELAV8</span>
         </div>
       </footer>

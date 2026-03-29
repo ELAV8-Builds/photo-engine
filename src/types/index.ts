@@ -40,17 +40,59 @@ export interface TemplateSlot {
   transition: 'fade' | 'slide-left' | 'slide-right' | 'zoom-in' | 'zoom-out' | 'glitch' | 'none';
   effect: 'ken-burns' | 'parallax' | 'static' | 'slow-zoom' | 'pan-left' | 'pan-right' | 'bounce';
   holdPoint: 'face' | 'center' | 'rule-of-thirds';
+  /** Optional text overlay shown during this slot */
+  textOverlay?: TextOverlay;
 }
+
+/** Text overlay that can appear on a slot or as intro/outro */
+export interface TextOverlay {
+  text: string;
+  position: 'top' | 'center' | 'bottom';
+  fontSize: 'sm' | 'md' | 'lg' | 'xl';
+  fontWeight: 'normal' | 'bold' | 'black';
+  animation: 'fade-in' | 'slide-up' | 'typewriter' | 'scale-pop' | 'glitch-in' | 'none';
+  color: string;
+  /** Optional shadow/glow color */
+  glowColor?: string;
+}
+
+/** Particle/effect system for template themes */
+export type ParticleType = 'confetti' | 'snow' | 'sparks' | 'hearts' | 'stars' | 'bubbles' | 'none';
+
+export interface TemplateTheme {
+  /** CSS filter applied to media (e.g., warm tint, cool tint) */
+  mediaFilter?: string;
+  /** Background color behind media */
+  bgColor: string;
+  /** Particle effect during playback */
+  particles: ParticleType;
+  /** Particle density (0-1) */
+  particleDensity: number;
+  /** Color tint overlay (rgba) */
+  tintOverlay?: string;
+  /** Vignette intensity (0-1, 0 = none) */
+  vignette: number;
+}
+
+export type TemplateStyle =
+  | 'cinematic' | 'dynamic' | 'minimal' | 'retro' | 'glitch' | 'parallax'
+  | 'summer' | 'winter' | 'party' | 'electric' | 'golden' | 'neon';
 
 export interface SmartTemplate {
   id: string;
   name: string;
   description: string;
-  style: 'cinematic' | 'dynamic' | 'minimal' | 'retro' | 'glitch' | 'parallax';
+  style: TemplateStyle;
   color: string;
   totalDuration: number;
   slots: TemplateSlot[];
   mediaCount: number;
+  /** Theme-specific visual effects */
+  theme: TemplateTheme;
+  /** Default text overlays (user can edit/remove) */
+  defaultTexts: TextOverlay[];
+  /** Emoji/icon for template picker */
+  emoji: string;
 }
 
 export interface Template {
@@ -58,7 +100,7 @@ export interface Template {
   name: string;
   description: string;
   thumbnail: string;
-  style: 'cinematic' | 'dynamic' | 'minimal' | 'retro' | 'glitch' | 'parallax';
+  style: TemplateStyle;
   transitionType: string;
   durationPerPhoto: number;
   color: string;

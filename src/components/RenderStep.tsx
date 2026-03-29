@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { MediaFile, MusicTrack, RenderProgress, SmartTemplate, TemplateSlot } from '@/types';
+import { MediaFile, MusicTrack, RenderProgress, SmartTemplate, TemplateSlot, TemplateTheme, TextOverlay } from '@/types';
 import { SMART_TEMPLATES, assignMediaToSlots, formatDuration } from '@/lib/templates';
+import { createParticles, updateParticles, drawParticles, drawVignette, drawTintOverlay, getParticleCSS, Particle } from '@/lib/particles';
+import { drawTextOverlay } from '@/lib/text-renderer';
 
 interface RenderStepProps {
   photos: MediaFile[];
@@ -15,19 +17,22 @@ interface RenderStepProps {
   outputQuality: '720p' | '1080p' | '4k';
   onQualityChange: (q: '720p' | '1080p' | '4k') => void;
   onBack: () => void;
+  textOverrides?: Record<number, string | null>; // slot index → custom text (null = removed)
 }
 
-export default function RenderStep({
-  photos,
-  selectedTemplate,
-  music,
-  title,
-  onTitleChange,
-  aspectRatio,
-  outputQuality,
-  onQualityChange,
-  onBack,
-}: RenderStepProps) {
+export default function RenderStep(props: RenderStepProps) {
+  const {
+    photos,
+    selectedTemplate,
+    music,
+    title,
+    onTitleChange,
+    aspectRatio,
+    outputQuality,
+    onQualityChange,
+    onBack,
+  } = props;
+  const textOverrides = props.textOverrides ?? {};
   const [progress, setProgress] = useState<RenderProgress>({
     status: 'idle',
     percent: 0,
@@ -246,6 +251,9 @@ export default function RenderStep({
             canvas.width,
             canvas.height,
             slot,
+            template.theme,
+            textOverrides,
+            i,
           );
         } else {
           // Empty slot — hold black for slot duration
@@ -300,18 +308,14 @@ export default function RenderStep({
         error: e instanceof Error ? e.message : 'Client-side render failed',
       });
     }
-  }, [template, slotAssignments, selectedMedia, mediaById, aspectRatio, outputQuality, music]);
+  }, [template, slotAssignments, selectedMedia, mediaById, aspectRatio, outputQuality, music, textOverrides]);
 
   const isRendering = progress.status === 'rendering' || progress.status === 'encoding' || progress.status === 'preparing';
 
   // ------------------------------------------------------------------
   //  Compute preview style filter for template style overlays
   // ------------------------------------------------------------------
-  const previewFilter = template?.style === 'retro'
-    ? 'saturate(0.6) contrast(1.2) sepia(0.3)'
-    : template?.style === 'glitch'
-      ? 'hue-rotate(10deg) contrast(1.1)'
-      : undefined;
+  const previewFilter = template?.theme.mediaFilter || undefined;
 
   return (
     <div className="space-y-6">
@@ -414,6 +418,53 @@ export default function RenderStep({
               background: 'linear-gradient(transparent 50%, rgba(0,255,255,0.02) 50%)',
               backgroundSize: '100% 4px',
             }} />
+          )}
+
+          {/* Particle preview */}
+          {template && template.theme.particles !== 'none' && (
+            <div
+              className="absolute inset-0 pointer-events-none"
+              style={{
+                backgroundImage: getParticleCSS(template.theme.particles, template.theme.particleDensity),
+              }}
+            />
+          )}
+
+          {/* Tint overlay */}
+          {template?.theme.tintOverlay && (
+            <div
+              className="absolute inset-0 pointer-events-none"
+              style={{ background: template.theme.tintOverlay }}
+            />
+          )}
+
+          {/* Text preview (static) */}
+          {currentSlot?.textOverlay && textOverrides[previewSlotIndex] !== null && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <p
+                className="font-bold text-center px-4"
+                style={{
+                  color: currentSlot.textOverlay.color,
+                  fontSize: currentSlot.textOverlay.fontSize === 'xl' ? '2rem'
+                    : currentSlot.textOverlay.fontSize === 'lg' ? '1.5rem'
+                    : currentSlot.textOverlay.fontSize === 'md' ? '1rem'
+                    : '0.75rem',
+                  textShadow: currentSlot.textOverlay.glowColor
+                    ? `0 0 15px ${currentSlot.textOverlay.glowColor}`
+                    : '0 2px 8px rgba(0,0,0,0.8)',
+                  position: 'absolute',
+                  top: currentSlot.textOverlay.position === 'top' ? '15%'
+                    : currentSlot.textOverlay.position === 'bottom' ? '85%'
+                    : '50%',
+                  left: '50%',
+                  transform: 'translate(-50%, -50%)',
+                }}
+              >
+                {typeof textOverrides[previewSlotIndex] === 'string'
+                  ? textOverrides[previewSlotIndex]
+                  : currentSlot.textOverlay.text}
+              </p>
+            </div>
           )}
         </div>
       </div>
@@ -661,11 +712,21 @@ async function renderSlotToCanvas(
   width: number,
   height: number,
   slot: TemplateSlot,
+  theme: TemplateTheme,
+  textOverrides: Record<number, string | null>,
+  slotIndex: number,
 ): Promise<void> {
   const img = await loadMediaImage(media);
   const fps = 30;
   const frames = Math.round(slot.duration * fps);
   const { fx, fy } = getFocusPoint(media, slot.holdPoint);
+
+  // Initialize particles for this slot
+  let particles: Particle[] = [];
+  if (theme.particles !== 'none') {
+    const particleCount = Math.round(80 * theme.particleDensity);
+    particles = createParticles(theme.particles, particleCount, width, height);
+  }
 
   for (let frame = 0; frame < frames; frame++) {
     const t = frames > 1 ? frame / (frames - 1) : 0; // normalized 0..1
@@ -732,6 +793,34 @@ async function renderSlotToCanvas(
 
     drawCover(ctx, img, width, height);
     ctx.restore();
+
+    // --- Theme overlays ---
+
+    // Tint overlay
+    if (theme.tintOverlay) {
+      drawTintOverlay(ctx, width, height, theme.tintOverlay);
+    }
+
+    // Vignette
+    if (theme.vignette > 0) {
+      drawVignette(ctx, width, height, theme.vignette);
+    }
+
+    // Particles
+    if (theme.particles !== 'none' && particles.length > 0) {
+      drawParticles(ctx, particles, width, height);
+      particles = updateParticles(particles, 1 / fps, width, height);
+    }
+
+    // Text overlay
+    if (slot.textOverlay && textOverrides[slotIndex] !== null) {
+      const overlay = { ...slot.textOverlay };
+      // Apply user text override if present
+      if (typeof textOverrides[slotIndex] === 'string') {
+        overlay.text = textOverrides[slotIndex] as string;
+      }
+      drawTextOverlay(ctx, overlay, width, height, t);
+    }
 
     // Yield to browser every 5 frames to prevent blocking
     if (frame % 5 === 0) {

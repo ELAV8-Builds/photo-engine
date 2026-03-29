@@ -1,0 +1,28 @@
+<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="skyGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FF6347" stop-opacity="0.3"/>
+      <stop offset="50%" stop-color="#FF8C00" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="#FFD700" stop-opacity="0.1"/>
+    </linearGradient>
+    <linearGradient id="sunsetGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFD700"/>
+      <stop offset="50%" stop-color="#FF8C00"/>
+      <stop offset="100%" stop-color="#FF6347"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="8" width="56" height="48" rx="4" fill="url(#skyGrad)"/>
+  <circle cx="32" cy="38" r="12" fill="url(#sunsetGrad)"/>
+  <!-- Atmosphere bands -->
+  <line x1="8" y1="20" x2="56" y2="20" stroke="#FF6347" stroke-width="1" opacity="0.2" stroke-linecap="round"/>
+  <line x1="6" y1="25" x2="58" y2="25" stroke="#FF8C00" stroke-width="1.5" opacity="0.25" stroke-linecap="round"/>
+  <line x1="5" y1="30" x2="59" y2="30" stroke="#FF8C00" stroke-width="1.5" opacity="0.35" stroke-linecap="round"/>
+  <line x1="4" y1="35" x2="60" y2="35" stroke="#FF6347" stroke-width="2" opacity="0.4" stroke-linecap="round"/>
+  <!-- Horizon -->
+  <line x1="4" y1="38" x2="60" y2="38" stroke="#FF6347" stroke-width="2" stroke-linecap="round" opacity="0.8"/>
+  <!-- Reflections -->
+  <line x1="18" y1="42" x2="46" y2="42" stroke="#FF8C00" stroke-width="1.5" opacity="0.5" stroke-linecap="round"/>
+  <line x1="22" y1="46" x2="42" y2="46" stroke="#FF6347" stroke-width="1" opacity="0.35" stroke-linecap="round"/>
+  <line x1="26" y1="50" x2="38" y2="50" stroke="#FF6347" stroke-width="1" opacity="0.2" stroke-linecap="round"/>
+  <rect x="4" y="8" width="56" height="48" rx="4" fill="none" stroke="#FF6347" stroke-width="1.5" opacity="0.4"/>
+</svg>

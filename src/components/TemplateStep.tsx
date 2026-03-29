@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { SMART_TEMPLATES, assignMediaToSlots, formatDuration } from '@/lib/templates';
+import { getParticleCSS } from '@/lib/particles';
 import { MediaFile, SmartTemplate } from '@/types';
 
 interface TemplateStepProps {
@@ -12,6 +13,8 @@ interface TemplateStepProps {
   onAspectChange: (a: '16:9' | '9:16' | '1:1') => void;
   onNext: () => void;
   onBack: () => void;
+  textOverrides: Record<number, string | null>; // slot index → custom text (null = removed)
+  onTextOverridesChange: (overrides: Record<number, string | null>) => void;
 }
 
 const STYLE_ICONS: Record<string, string> = {
@@ -21,6 +24,12 @@ const STYLE_ICONS: Record<string, string> = {
   retro: '/icons/retro.svg',
   glitch: '/icons/glitch.svg',
   parallax: '/icons/parallax.svg',
+  summer: '/icons/summer.svg',
+  winter: '/icons/winter.svg',
+  party: '/icons/party.svg',
+  electric: '/icons/electric.svg',
+  golden: '/icons/golden.svg',
+  neon: '/icons/neon.svg',
 };
 
 const ASPECT_OPTIONS: { value: '16:9' | '9:16' | '1:1'; label: string; icon: string }[] = [
@@ -289,6 +298,125 @@ function TimelineVisualization({
 }
 
 /* ------------------------------------------------------------------ */
+/*  Text Overlay Editor                                                */
+/* ------------------------------------------------------------------ */
+function TextOverlayEditor({
+  template,
+  textOverrides,
+  onTextOverridesChange,
+}: {
+  template: SmartTemplate;
+  textOverrides: Record<number, string | null>;
+  onTextOverridesChange: (overrides: Record<number, string | null>) => void;
+}) {
+  // Find all slots that have textOverlay
+  const textSlots = template.slots
+    .map((slot, i) => ({ slot, index: i }))
+    .filter(({ slot }) => slot.textOverlay);
+
+  if (textSlots.length === 0 && template.defaultTexts.length === 0) return null;
+
+  return (
+    <div className="card-glow p-5">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-bold text-white flex items-center gap-2">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="text-accent-gold" strokeWidth="2">
+            <path d="M4 7V4h16v3" />
+            <path d="M9 20h6" />
+            <path d="M12 4v16" />
+          </svg>
+          Text Overlays
+        </h3>
+        <span className="text-[10px] text-text-muted">{textSlots.length} text{textSlots.length !== 1 ? 's' : ''}</span>
+      </div>
+
+      <div className="space-y-3">
+        {textSlots.map(({ slot, index }) => {
+          const overlay = slot.textOverlay!;
+          const isRemoved = textOverrides[index] === null;
+          const currentText = textOverrides[index] !== undefined
+            ? textOverrides[index]
+            : overlay.text;
+
+          return (
+            <div key={index} className={`flex items-center gap-3 ${isRemoved ? 'opacity-40' : ''}`}>
+              {/* Slot badge */}
+              <span className="text-[10px] font-mono text-text-muted bg-bg-input px-2 py-1 rounded shrink-0">
+                Slot {index + 1}
+              </span>
+
+              {/* Text input */}
+              <input
+                type="text"
+                value={isRemoved ? '' : (currentText || '')}
+                onChange={(e) => {
+                  onTextOverridesChange({
+                    ...textOverrides,
+                    [index]: e.target.value,
+                  });
+                }}
+                disabled={isRemoved}
+                placeholder={overlay.text}
+                className="flex-1 px-3 py-1.5 bg-bg-input border border-border-subtle rounded-lg text-xs text-white placeholder:text-text-muted focus:border-accent-gold focus:outline-none disabled:opacity-50"
+              />
+
+              {/* Animation badge */}
+              <span className="text-[9px] font-mono text-accent-gold/60 bg-accent-gold/5 px-1.5 py-0.5 rounded shrink-0">
+                {overlay.animation}
+              </span>
+
+              {/* Position badge */}
+              <span className="text-[9px] font-mono text-text-muted shrink-0">
+                {overlay.position}
+              </span>
+
+              {/* Remove/restore button */}
+              <button
+                onClick={() => {
+                  if (isRemoved) {
+                    const next = { ...textOverrides };
+                    delete next[index];
+                    onTextOverridesChange(next);
+                  } else {
+                    onTextOverridesChange({
+                      ...textOverrides,
+                      [index]: null,
+                    });
+                  }
+                }}
+                className={`p-1 rounded transition-colors ${
+                  isRemoved
+                    ? 'text-accent-gold hover:bg-accent-gold/10'
+                    : 'text-text-muted hover:text-red-400 hover:bg-red-400/10'
+                }`}
+                aria-label={isRemoved ? 'Restore text' : 'Remove text'}
+                title={isRemoved ? 'Restore text' : 'Remove text'}
+              >
+                {isRemoved ? (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M3 12a9 9 0 1 0 9-9 9 9 0 0 0-9 9" />
+                    <path d="M12 8v4l2 2" />
+                  </svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                )}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      <p className="text-[10px] text-text-muted mt-3">
+        Edit text or remove overlays. Changes only affect your export.
+      </p>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Main Component                                                     */
 /* ------------------------------------------------------------------ */
 export default function TemplateStep({
@@ -299,6 +427,8 @@ export default function TemplateStep({
   onAspectChange,
   onNext,
   onBack,
+  textOverrides,
+  onTextOverridesChange,
 }: TemplateStepProps) {
   const selectedMedia = media.filter((m) => m.selected);
   const activeTemplate = SMART_TEMPLATES.find((t) => t.id === selectedTemplate) || null;
@@ -314,7 +444,7 @@ export default function TemplateStep({
       </div>
 
       {/* Templates Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
         {SMART_TEMPLATES.map((template) => {
           const isSelected = selectedTemplate === template.id;
           return (
@@ -336,6 +466,11 @@ export default function TemplateStep({
               <div className="relative h-36 rounded-lg overflow-hidden mb-3 bg-bg-main">
                 <AnimatedPreview template={template} media={media} />
 
+                {/* Emoji badge */}
+                <div className="absolute top-2 left-2 z-10 bg-black/50 backdrop-blur-sm rounded-lg px-1.5 py-0.5">
+                  <span className="text-sm">{template.emoji}</span>
+                </div>
+
                 {/* Style overlay: Retro scanlines */}
                 {template.style === 'retro' && (
                   <div
@@ -355,6 +490,24 @@ export default function TemplateStep({
                       background: 'linear-gradient(transparent 50%, rgba(0,255,255,0.04) 50%)',
                       backgroundSize: '100% 4px',
                     }}
+                  />
+                )}
+
+                {/* Particle preview overlay */}
+                {template.theme.particles !== 'none' && (
+                  <div
+                    className="absolute inset-0 pointer-events-none"
+                    style={{
+                      backgroundImage: getParticleCSS(template.theme.particles, template.theme.particleDensity),
+                    }}
+                  />
+                )}
+
+                {/* Theme tint overlay */}
+                {template.theme.tintOverlay && (
+                  <div
+                    className="absolute inset-0 pointer-events-none"
+                    style={{ background: template.theme.tintOverlay }}
                   />
                 )}
 
@@ -399,6 +552,20 @@ export default function TemplateStep({
                   </span>
                 </div>
               </div>
+
+              {/* Text overlay preview */}
+              {template.defaultTexts.length > 0 && (
+                <div className="mt-2 flex items-center gap-1.5">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="text-text-muted" strokeWidth="2">
+                    <path d="M4 7V4h16v3" />
+                    <path d="M9 20h6" />
+                    <path d="M12 4v16" />
+                  </svg>
+                  <span className="text-[10px] text-text-muted truncate">
+                    {template.defaultTexts.map(t => `"${t.text}"`).join(' · ')}
+                  </span>
+                </div>
+              )}
             </button>
           );
         })}
@@ -407,6 +574,15 @@ export default function TemplateStep({
       {/* Timeline Visualization (shown when a template is selected) */}
       {activeTemplate && (
         <TimelineVisualization template={activeTemplate} media={media} />
+      )}
+
+      {/* Text Overlay Editor */}
+      {activeTemplate && activeTemplate.defaultTexts.length > 0 && (
+        <TextOverlayEditor
+          template={activeTemplate}
+          textOverrides={textOverrides}
+          onTextOverridesChange={onTextOverridesChange}
+        />
       )}
 
       {/* Aspect Ratio */}

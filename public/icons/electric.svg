@@ -1,0 +1,34 @@
+<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="boltGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="40%" stop-color="#00BFFF"/>
+      <stop offset="100%" stop-color="#0080FF"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <!-- Glow layer behind bolt -->
+  <polygon points="36,4 22,28 30,28 18,60 24,60 46,30 36,30 44,4" fill="#00BFFF" opacity="0.2" filter="url(#glow)"/>
+  <!-- Main lightning bolt -->
+  <polygon points="36,4 22,28 30,28 18,60 24,60 46,30 36,30 44,4" fill="url(#boltGrad)" stroke="#00BFFF" stroke-width="1" stroke-linejoin="round"/>
+  <!-- Inner highlight -->
+  <polygon points="36,10 26,28 32,28 22,52 26,52 42,30 35,30 40,10" fill="#FFFFFF" opacity="0.3"/>
+  <!-- Spark dots -->
+  <circle cx="14" cy="20" r="1.5" fill="#00BFFF" opacity="0.8"/>
+  <circle cx="50" cy="16" r="1.2" fill="#FFFFFF" opacity="0.9"/>
+  <circle cx="10" cy="38" r="1" fill="#00BFFF" opacity="0.6"/>
+  <circle cx="52" cy="42" r="1.8" fill="#00BFFF" opacity="0.7"/>
+  <circle cx="48" cy="28" r="1" fill="#FFFFFF" opacity="0.8"/>
+  <circle cx="14" cy="50" r="1.3" fill="#00BFFF" opacity="0.5"/>
+  <circle cx="54" cy="54" r="1" fill="#00BFFF" opacity="0.4"/>
+  <circle cx="8" cy="12" r="1" fill="#FFFFFF" opacity="0.6"/>
+  <!-- Small electric arcs -->
+  <path d="M12 26 L15 24 L13 28" fill="none" stroke="#00BFFF" stroke-width="1" stroke-linecap="round" opacity="0.6"/>
+  <path d="M50 34 L53 32 L51 36" fill="none" stroke="#00BFFF" stroke-width="1" stroke-linecap="round" opacity="0.6"/>
+</svg>
