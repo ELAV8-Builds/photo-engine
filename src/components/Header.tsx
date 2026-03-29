@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { Step } from '@/types';
 
 const STEPS: { id: Step; label: string; num: number }[] = [
@@ -13,9 +14,10 @@ interface HeaderProps {
   currentStep: Step;
   onStepClick: (step: Step) => void;
   canNavigate: (step: Step) => boolean;
+  projectName?: string;
 }
 
-export default function Header({ currentStep, onStepClick, canNavigate }: HeaderProps) {
+export default function Header({ currentStep, onStepClick, canNavigate, projectName }: HeaderProps) {
   const currentIndex = STEPS.findIndex(s => s.id === currentStep);
 
   return (
@@ -29,7 +31,9 @@ export default function Header({ currentStep, onStepClick, canNavigate }: Header
               <h1 className="text-sm font-bold text-white tracking-wide">
                 PHOTO<span className="text-accent-gold">FORGE</span>
               </h1>
-              <p className="text-[10px] text-text-muted font-mono tracking-widest uppercase">AI Presentations</p>
+              <p className="text-[10px] text-text-muted font-mono tracking-widest uppercase">
+                {projectName || 'AI Presentations'}
+              </p>
             </div>
           </div>
 
@@ -77,9 +81,22 @@ export default function Header({ currentStep, onStepClick, canNavigate }: Header
             })}
           </nav>
 
-          {/* Mobile step indicator */}
-          <div className="sm:hidden text-xs text-text-muted font-mono">
-            {currentIndex + 1}/{STEPS.length}
+          {/* Right side: Projects link + Mobile step indicator */}
+          <div className="flex items-center gap-3">
+            <Link
+              href="/projects"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-text-muted hover:text-white hover:bg-white/5 transition-colors"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" />
+              </svg>
+              <span className="hidden md:inline">Projects</span>
+            </Link>
+
+            {/* Mobile step indicator */}
+            <div className="sm:hidden text-xs text-text-muted font-mono">
+              {currentIndex + 1}/{STEPS.length}
+            </div>
           </div>
         </div>
       </div>

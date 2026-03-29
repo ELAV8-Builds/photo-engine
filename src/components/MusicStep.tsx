@@ -3,6 +3,8 @@
 import { useRef, useState, useEffect } from 'react';
 import { MusicTrack, MediaFile } from '@/types';
 import { SMART_TEMPLATES, formatDuration as fmtDuration } from '@/lib/templates';
+import { saveSongFromTrack, songExists, getSongCount } from '@/lib/song-library';
+import SongLibrary from './SongLibrary';
 
 interface MusicStepProps {
   music: MusicTrack | null;
@@ -29,10 +31,19 @@ export default function MusicStep({
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [ytLoading, setYtLoading] = useState(false);
   const [ytError, setYtError] = useState('');
+  const [showLibrary, setShowLibrary] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState('');
+  const [librarySongCount, setLibrarySongCount] = useState(0);
 
   const selectedMedia = photos.filter(p => p.selected);
   const template = selectedTemplate ? SMART_TEMPLATES.find(t => t.id === selectedTemplate) : null;
   const totalDuration = template ? template.totalDuration : selectedMedia.length * (durationPerPhoto ?? 3.5);
+
+  // Load library count on mount
+  useEffect(() => {
+    getSongCount().then(setLibrarySongCount).catch(() => {});
+  }, [showLibrary]);
 
   const handleFileUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -91,6 +102,40 @@ export default function MusicStep({
     } finally {
       setYtLoading(false);
     }
+  };
+
+  const handleSaveToLibrary = async () => {
+    if (!music || saving) return;
+
+    setSaving(true);
+    setSaveMessage('');
+
+    try {
+      // Check if already exists
+      const exists = await songExists(music.name);
+      if (exists) {
+        setSaveMessage('Already in library');
+        setTimeout(() => setSaveMessage(''), 3000);
+        return;
+      }
+
+      await saveSongFromTrack(music);
+      setSaveMessage('Saved to library!');
+      const count = await getSongCount();
+      setLibrarySongCount(count);
+      setTimeout(() => setSaveMessage(''), 3000);
+    } catch (err) {
+      console.error('[MusicStep] Failed to save to library:', err);
+      setSaveMessage('Save failed');
+      setTimeout(() => setSaveMessage(''), 3000);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSelectFromLibrary = (track: MusicTrack) => {
+    onMusicChange(track);
+    setShowLibrary(false);
   };
 
   const removeMusic = () => {
@@ -161,6 +206,25 @@ export default function MusicStep({
               </div>
             </div>
 
+            {/* Save to Library button */}
+            <button
+              onClick={handleSaveToLibrary}
+              disabled={saving}
+              className="text-text-muted hover:text-purple-400 transition-colors p-2 relative group"
+              aria-label="Save to library"
+              title="Save to library"
+            >
+              {saving ? (
+                <div className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                  <path d="M2 17l10 5 10-5" />
+                  <path d="M2 12l10 5 10-5" />
+                </svg>
+              )}
+            </button>
+
             <button
               onClick={removeMusic}
               className="text-text-muted hover:text-red-400 transition-colors p-2"
@@ -172,6 +236,17 @@ export default function MusicStep({
               </svg>
             </button>
           </div>
+
+          {/* Save confirmation message */}
+          {saveMessage && (
+            <div className={`mt-2 text-xs font-medium text-center py-1 px-3 rounded-full ${
+              saveMessage.includes('Saved') ? 'text-green-400 bg-green-500/10' :
+              saveMessage.includes('Already') ? 'text-yellow-400 bg-yellow-500/10' :
+              'text-red-400 bg-red-500/10'
+            }`}>
+              {saveMessage}
+            </div>
+          )}
 
           {music.url && <audio ref={audioRef} src={music.url} preload="metadata" />}
 
@@ -227,67 +302,102 @@ export default function MusicStep({
         </div>
       )}
 
+      {/* Song Library Panel */}
+      {showLibrary && (
+        <SongLibrary
+          onSelectSong={handleSelectFromLibrary}
+          onClose={() => setShowLibrary(false)}
+        />
+      )}
+
       {/* Upload options */}
-      {!music && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {/* File upload */}
-          <div
-            onClick={() => fileInputRef.current?.click()}
-            className="card-glow p-6 text-center cursor-pointer hover:shadow-gold-sm transition-all group"
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => e.key === 'Enter' && fileInputRef.current?.click()}
-          >
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="audio/*"
-              onChange={(e) => handleFileUpload(e.target.files)}
-              className="hidden"
-            />
-            <div className="w-12 h-12 mx-auto rounded-xl bg-accent-gold/10 border border-accent-gold/20 flex items-center justify-center mb-3 group-hover:shadow-gold-sm transition-shadow">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="text-accent-gold" strokeWidth="1.5">
-                <path d="M9 18V5l12-2v13" />
-                <circle cx="6" cy="18" r="3" />
-                <circle cx="18" cy="16" r="3" />
+      {!music && !showLibrary && (
+        <div className="space-y-4">
+          {/* Library button — shown above upload options */}
+          {librarySongCount > 0 && (
+            <button
+              onClick={() => setShowLibrary(true)}
+              className="w-full card-glow p-4 flex items-center justify-between hover:shadow-gold-sm transition-all group"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-purple-500/10 border border-purple-500/20 flex items-center justify-center group-hover:shadow-[0_0_10px_rgba(168,85,247,0.2)] transition-shadow">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="text-purple-400" strokeWidth="1.5">
+                    <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                    <path d="M2 17l10 5 10-5" />
+                    <path d="M2 12l10 5 10-5" />
+                  </svg>
+                </div>
+                <div className="text-left">
+                  <p className="text-sm text-white font-semibold">Song Library</p>
+                  <p className="text-xs text-text-muted">{librarySongCount} song{librarySongCount !== 1 ? 's' : ''} saved</p>
+                </div>
+              </div>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="text-text-muted group-hover:text-purple-400 transition-colors" strokeWidth="2">
+                <polyline points="9 18 15 12 9 6" />
               </svg>
-            </div>
-            <p className="text-sm text-white font-semibold">Upload Audio File</p>
-            <p className="text-xs text-text-muted mt-1">MP3, WAV, AAC, OGG</p>
-          </div>
+            </button>
+          )}
 
-          {/* YouTube */}
-          <div className="card-glow p-6">
-            <div className="w-12 h-12 mx-auto rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-3">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" className="text-red-500">
-                <path d="M23 9.7s-.2-1.7-1-2.4c-.9-1-1.9-1-2.4-1C16.3 6 12 6 12 6s-4.3 0-7.6.3c-.5 0-1.5 0-2.4 1-.7.7-1 2.4-1 2.4S.8 11.6.8 13.5v1.8c0 1.9.2 3.7.2 3.7s.2 1.7 1 2.4c.9 1 2.1.9 2.6 1 1.9.2 8.4.2 8.4.2s4.3 0 7.6-.3c.5 0 1.5 0 2.4-1 .7-.7 1-2.4 1-2.4s.2-1.9.2-3.7v-1.8c0-1.9-.2-3.7-.2-3.7zM9.5 16.2V9.8L16 13l-6.5 3.2z"/>
-              </svg>
-            </div>
-            <p className="text-sm text-white font-semibold text-center mb-3">YouTube Audio</p>
-
-            <div className="flex gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* File upload */}
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              className="card-glow p-6 text-center cursor-pointer hover:shadow-gold-sm transition-all group"
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => e.key === 'Enter' && fileInputRef.current?.click()}
+            >
               <input
-                type="text"
-                value={youtubeUrl}
-                onChange={(e) => { setYoutubeUrl(e.target.value); setYtError(''); }}
-                placeholder="https://youtube.com/watch?v=..."
-                disabled={ytLoading}
-                className="flex-1 px-3 py-2 bg-bg-input border border-border-subtle rounded-lg text-sm text-white placeholder:text-text-muted focus:border-accent-gold focus:outline-none disabled:opacity-50"
+                ref={fileInputRef}
+                type="file"
+                accept="audio/*"
+                onChange={(e) => handleFileUpload(e.target.files)}
+                className="hidden"
               />
-              <button
-                onClick={handleYoutubeRip}
-                disabled={ytLoading || !youtubeUrl.trim()}
-                className="btn-gold px-3 py-2 text-xs whitespace-nowrap"
-              >
-                {ytLoading ? (
-                  <div className="w-4 h-4 border-2 border-bg-main border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  'Rip'
-                )}
-              </button>
+              <div className="w-12 h-12 mx-auto rounded-xl bg-accent-gold/10 border border-accent-gold/20 flex items-center justify-center mb-3 group-hover:shadow-gold-sm transition-shadow">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="text-accent-gold" strokeWidth="1.5">
+                  <path d="M9 18V5l12-2v13" />
+                  <circle cx="6" cy="18" r="3" />
+                  <circle cx="18" cy="16" r="3" />
+                </svg>
+              </div>
+              <p className="text-sm text-white font-semibold">Upload Audio File</p>
+              <p className="text-xs text-text-muted mt-1">MP3, WAV, AAC, OGG</p>
             </div>
-            {ytError && <p className="text-xs text-red-400 mt-2">{ytError}</p>}
-            <p className="text-[10px] text-text-muted mt-2 text-center">Requires yt-dlp on backend</p>
+
+            {/* YouTube */}
+            <div className="card-glow p-6">
+              <div className="w-12 h-12 mx-auto rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-3">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" className="text-red-500">
+                  <path d="M23 9.7s-.2-1.7-1-2.4c-.9-1-1.9-1-2.4-1C16.3 6 12 6 12 6s-4.3 0-7.6.3c-.5 0-1.5 0-2.4 1-.7.7-1 2.4-1 2.4S.8 11.6.8 13.5v1.8c0 1.9.2 3.7.2 3.7s.2 1.7 1 2.4c.9 1 2.1.9 2.6 1 1.9.2 8.4.2 8.4.2s4.3 0 7.6-.3c.5 0 1.5 0 2.4-1 .7-.7 1-2.4 1-2.4s.2-1.9.2-3.7v-1.8c0-1.9-.2-3.7-.2-3.7zM9.5 16.2V9.8L16 13l-6.5 3.2z"/>
+                </svg>
+              </div>
+              <p className="text-sm text-white font-semibold text-center mb-3">YouTube Audio</p>
+
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={youtubeUrl}
+                  onChange={(e) => { setYoutubeUrl(e.target.value); setYtError(''); }}
+                  placeholder="https://youtube.com/watch?v=..."
+                  disabled={ytLoading}
+                  className="flex-1 px-3 py-2 bg-bg-input border border-border-subtle rounded-lg text-sm text-white placeholder:text-text-muted focus:border-accent-gold focus:outline-none disabled:opacity-50"
+                />
+                <button
+                  onClick={handleYoutubeRip}
+                  disabled={ytLoading || !youtubeUrl.trim()}
+                  className="btn-gold px-3 py-2 text-xs whitespace-nowrap"
+                >
+                  {ytLoading ? (
+                    <div className="w-4 h-4 border-2 border-bg-main border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    'Rip'
+                  )}
+                </button>
+              </div>
+              {ytError && <p className="text-xs text-red-400 mt-2">{ytError}</p>}
+              <p className="text-[10px] text-text-muted mt-2 text-center">Requires yt-dlp on backend</p>
+            </div>
           </div>
         </div>
       )}

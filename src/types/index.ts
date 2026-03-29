@@ -37,9 +37,23 @@ export interface MusicTrack {
 export interface TemplateSlot {
   slotType: 'photo' | 'video' | 'any';
   duration: number;
-  transition: 'fade' | 'slide-left' | 'slide-right' | 'zoom-in' | 'zoom-out' | 'glitch' | 'none';
-  effect: 'ken-burns' | 'parallax' | 'static' | 'slow-zoom' | 'pan-left' | 'pan-right' | 'bounce';
+  /** Transition name — any key from TRANSITION_MAP */
+  transition: string;
+  /** Motion effect name — any key from MOTION_MAP */
+  effect: string;
   holdPoint: 'face' | 'center' | 'rule-of-thirds';
+  /** Motion intensity override (0-1) */
+  motionIntensity?: number;
+  /** Motion easing override */
+  motionEasing?: string;
+  /** Transition easing override */
+  transitionEasing?: string;
+  /** Transition duration in seconds (default 0.4) */
+  transitionDuration?: number;
+  /** Post-processing effects for this slot */
+  postEffects?: { effect: string; intensity: number; params?: Record<string, number | string> }[];
+  /** Speed curve preset name */
+  speedPreset?: string;
   /** Optional text overlay shown during this slot */
   textOverlay?: TextOverlay;
 }
@@ -93,6 +107,10 @@ export interface SmartTemplate {
   defaultTexts: TextOverlay[];
   /** Emoji/icon for template picker */
   emoji: string;
+  /** Default color grade preset ID */
+  colorGrade?: string;
+  /** Default speed preset for all slots */
+  defaultSpeed?: string;
 }
 
 export interface Template {

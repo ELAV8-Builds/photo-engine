@@ -1,9 +1,15 @@
 import { SmartTemplate, Template } from '@/types';
 
 /**
- * Smart Templates — pre-built timelines with fixed slot structures.
- * Each slot has its own duration, transition, and effect.
- * Media gets auto-assigned to slots based on type and count.
+ * Smart Templates v4 — pre-built timelines with the full v4 effects vocabulary.
+ *
+ * Each slot now supports:
+ * - Any motion from MOTION_MAP (27 effects)
+ * - Any transition from TRANSITION_MAP (23 transitions)
+ * - Post-processing stacks (color grade, film grain, vignette, bloom, etc.)
+ * - Speed curve presets
+ * - Motion intensity + easing overrides
+ * - Transition duration + easing overrides
  *
  * 12 themed templates across cinematic, dynamic, minimal, retro, glitch,
  * parallax, summer, winter, party, electric, golden, and neon styles.
@@ -21,6 +27,8 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
     totalDuration: 32,
     mediaCount: 8,
     emoji: '🎬',
+    colorGrade: 'warm-cinematic',
+    defaultSpeed: 'normal',
     theme: {
       bgColor: '#000',
       particles: 'none',
@@ -32,14 +40,82 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
       { text: 'The End', position: 'center', fontSize: 'xl', fontWeight: 'bold', animation: 'fade-in', color: '#fff' },
     ],
     slots: [
-      { slotType: 'any', duration: 5, transition: 'fade', effect: 'ken-burns', holdPoint: 'face', textOverlay: { text: 'Your Story', position: 'center', fontSize: 'xl', fontWeight: 'bold', animation: 'fade-in', color: '#fff' } },
-      { slotType: 'any', duration: 3, transition: 'fade', effect: 'slow-zoom', holdPoint: 'center' },
-      { slotType: 'any', duration: 4, transition: 'fade', effect: 'pan-left', holdPoint: 'rule-of-thirds' },
-      { slotType: 'any', duration: 5, transition: 'fade', effect: 'ken-burns', holdPoint: 'face' },
-      { slotType: 'any', duration: 3, transition: 'fade', effect: 'static', holdPoint: 'center' },
-      { slotType: 'any', duration: 4, transition: 'fade', effect: 'pan-right', holdPoint: 'rule-of-thirds' },
-      { slotType: 'any', duration: 5, transition: 'fade', effect: 'slow-zoom', holdPoint: 'face' },
-      { slotType: 'any', duration: 3, transition: 'fade', effect: 'ken-burns', holdPoint: 'center', textOverlay: { text: 'The End', position: 'center', fontSize: 'xl', fontWeight: 'bold', animation: 'fade-in', color: '#fff' } },
+      {
+        slotType: 'any', duration: 5, transition: 'morphDissolve', effect: 'dolly-in', holdPoint: 'face',
+        motionIntensity: 0.5, motionEasing: 'easeInOut', transitionDuration: 0.6,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'warm-cinematic' } },
+          { effect: 'vignette', intensity: 0.4 },
+          { effect: 'letterbox', intensity: 0.8 },
+        ],
+        textOverlay: { text: 'Your Story', position: 'center', fontSize: 'xl', fontWeight: 'bold', animation: 'fade-in', color: '#fff' },
+      },
+      {
+        slotType: 'any', duration: 3, transition: 'fade', effect: 'crane-up', holdPoint: 'center',
+        motionIntensity: 0.4, motionEasing: 'easeOut', transitionDuration: 0.8,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'warm-cinematic' } },
+          { effect: 'vignette', intensity: 0.3 },
+          { effect: 'letterbox', intensity: 0.8 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 4, transition: 'fade', effect: 'drift', holdPoint: 'rule-of-thirds',
+        motionIntensity: 0.6, motionEasing: 'smoothStep',
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'warm-cinematic' } },
+          { effect: 'vignette', intensity: 0.3 },
+          { effect: 'letterbox', intensity: 0.8 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 5, transition: 'morphDissolve', effect: 'ken-burns', holdPoint: 'face',
+        motionIntensity: 0.6, transitionDuration: 0.6,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'warm-cinematic' } },
+          { effect: 'vignette', intensity: 0.4 },
+          { effect: 'letterbox', intensity: 0.8 },
+          { effect: 'bloom', intensity: 0.2 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 3, transition: 'fade', effect: 'rack-focus', holdPoint: 'center',
+        motionIntensity: 0.5, motionEasing: 'easeInOut',
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'warm-cinematic' } },
+          { effect: 'vignette', intensity: 0.3 },
+          { effect: 'letterbox', intensity: 0.8 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 4, transition: 'fade', effect: 'dolly-out', holdPoint: 'rule-of-thirds',
+        motionIntensity: 0.5, motionEasing: 'easeOut',
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'warm-cinematic' } },
+          { effect: 'vignette', intensity: 0.3 },
+          { effect: 'letterbox', intensity: 0.8 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 5, transition: 'morphDissolve', effect: 'crane-down', holdPoint: 'face',
+        motionIntensity: 0.5, transitionDuration: 0.6,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'warm-cinematic' } },
+          { effect: 'vignette', intensity: 0.4 },
+          { effect: 'letterbox', intensity: 0.8 },
+          { effect: 'lightLeak', intensity: 0.2 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 3, transition: 'fade', effect: 'slow-zoom', holdPoint: 'center',
+        motionIntensity: 0.4, transitionDuration: 1.0,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'warm-cinematic' } },
+          { effect: 'vignette', intensity: 0.5 },
+          { effect: 'letterbox', intensity: 0.8 },
+        ],
+        textOverlay: { text: 'The End', position: 'center', fontSize: 'xl', fontWeight: 'bold', animation: 'fade-in', color: '#fff' },
+      },
     ],
   },
 
@@ -49,12 +125,14 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
   {
     id: 'rapid-fire',
     name: 'Rapid Fire',
-    description: 'Fast cuts, high energy. Quick 1-2s bursts with punchy slide transitions. Great for events & parties.',
+    description: 'Fast cuts, high energy. Quick 1-2s bursts with punchy transitions. Great for events & parties.',
     style: 'dynamic',
     color: '#FF6B00',
     totalDuration: 20,
     mediaCount: 12,
     emoji: '⚡',
+    colorGrade: 'high-contrast',
+    defaultSpeed: 'ramp-classic',
     theme: {
       bgColor: '#000',
       particles: 'none',
@@ -65,18 +143,72 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
       { text: "LET'S GO", position: 'center', fontSize: 'xl', fontWeight: 'black', animation: 'scale-pop', color: '#FF6B00' },
     ],
     slots: [
-      { slotType: 'any', duration: 1.5, transition: 'slide-left', effect: 'bounce', holdPoint: 'center', textOverlay: { text: "LET'S GO", position: 'center', fontSize: 'xl', fontWeight: 'black', animation: 'scale-pop', color: '#FF6B00' } },
-      { slotType: 'any', duration: 1, transition: 'slide-right', effect: 'static', holdPoint: 'face' },
-      { slotType: 'any', duration: 2, transition: 'zoom-in', effect: 'slow-zoom', holdPoint: 'face' },
-      { slotType: 'any', duration: 1.5, transition: 'slide-left', effect: 'bounce', holdPoint: 'center' },
-      { slotType: 'any', duration: 1, transition: 'slide-right', effect: 'static', holdPoint: 'face' },
-      { slotType: 'any', duration: 2, transition: 'zoom-out', effect: 'ken-burns', holdPoint: 'center' },
-      { slotType: 'any', duration: 1.5, transition: 'slide-left', effect: 'bounce', holdPoint: 'face' },
-      { slotType: 'any', duration: 1, transition: 'slide-right', effect: 'static', holdPoint: 'center' },
-      { slotType: 'any', duration: 2, transition: 'zoom-in', effect: 'slow-zoom', holdPoint: 'face' },
-      { slotType: 'any', duration: 1.5, transition: 'slide-left', effect: 'bounce', holdPoint: 'center' },
-      { slotType: 'any', duration: 2, transition: 'zoom-out', effect: 'pan-left', holdPoint: 'face' },
-      { slotType: 'any', duration: 2.5, transition: 'fade', effect: 'ken-burns', holdPoint: 'center' },
+      {
+        slotType: 'any', duration: 1.5, transition: 'whipBlur', effect: 'pulse-zoom', holdPoint: 'center',
+        motionIntensity: 0.9, transitionDuration: 0.25, speedPreset: 'ramp-classic',
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.6, params: { preset: 'high-contrast' } },
+        ],
+        textOverlay: { text: "LET'S GO", position: 'center', fontSize: 'xl', fontWeight: 'black', animation: 'scale-pop', color: '#FF6B00' },
+      },
+      {
+        slotType: 'any', duration: 1, transition: 'slideRight', effect: 'whip-pan', holdPoint: 'face',
+        motionIntensity: 0.8, transitionDuration: 0.2,
+        postEffects: [{ effect: 'colorGrade', intensity: 0.6, params: { preset: 'high-contrast' } }],
+      },
+      {
+        slotType: 'any', duration: 2, transition: 'flashWhite', effect: 'speed-ramp', holdPoint: 'face',
+        motionIntensity: 0.8, transitionDuration: 0.15, speedPreset: 'ramp-dramatic',
+        postEffects: [{ effect: 'colorGrade', intensity: 0.6, params: { preset: 'high-contrast' } }],
+      },
+      {
+        slotType: 'any', duration: 1.5, transition: 'whipBlur', effect: 'bounce', holdPoint: 'center',
+        motionIntensity: 0.9, transitionDuration: 0.2,
+        postEffects: [{ effect: 'colorGrade', intensity: 0.6, params: { preset: 'high-contrast' } }],
+      },
+      {
+        slotType: 'any', duration: 1, transition: 'slideLeft', effect: 'dolly-in', holdPoint: 'face',
+        motionIntensity: 0.8, transitionDuration: 0.2,
+        postEffects: [{ effect: 'colorGrade', intensity: 0.6, params: { preset: 'high-contrast' } }],
+      },
+      {
+        slotType: 'any', duration: 2, transition: 'cubeRotate', effect: 'orbit', holdPoint: 'center',
+        motionIntensity: 0.7, transitionDuration: 0.3, speedPreset: 'ramp-classic',
+        postEffects: [{ effect: 'colorGrade', intensity: 0.6, params: { preset: 'high-contrast' } }],
+      },
+      {
+        slotType: 'any', duration: 1.5, transition: 'flashBlack', effect: 'pulse-zoom', holdPoint: 'face',
+        motionIntensity: 0.9, transitionDuration: 0.15,
+        postEffects: [{ effect: 'colorGrade', intensity: 0.6, params: { preset: 'high-contrast' } }],
+      },
+      {
+        slotType: 'any', duration: 1, transition: 'whipBlur', effect: 'whip-pan', holdPoint: 'center',
+        motionIntensity: 0.8, transitionDuration: 0.2,
+        postEffects: [{ effect: 'colorGrade', intensity: 0.6, params: { preset: 'high-contrast' } }],
+      },
+      {
+        slotType: 'any', duration: 2, transition: 'flipCard', effect: 'speed-ramp', holdPoint: 'face',
+        motionIntensity: 0.8, transitionDuration: 0.25, speedPreset: 'ramp-pulse',
+        postEffects: [{ effect: 'colorGrade', intensity: 0.6, params: { preset: 'high-contrast' } }],
+      },
+      {
+        slotType: 'any', duration: 1.5, transition: 'slideLeft', effect: 'bounce', holdPoint: 'center',
+        motionIntensity: 0.9, transitionDuration: 0.2,
+        postEffects: [{ effect: 'colorGrade', intensity: 0.6, params: { preset: 'high-contrast' } }],
+      },
+      {
+        slotType: 'any', duration: 2, transition: 'flashWhite', effect: 'dolly-out', holdPoint: 'face',
+        motionIntensity: 0.7, transitionDuration: 0.2, speedPreset: 'ramp-classic',
+        postEffects: [{ effect: 'colorGrade', intensity: 0.6, params: { preset: 'high-contrast' } }],
+      },
+      {
+        slotType: 'any', duration: 2.5, transition: 'fade', effect: 'ken-burns', holdPoint: 'center',
+        motionIntensity: 0.5, transitionDuration: 0.4,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.6, params: { preset: 'high-contrast' } },
+          { effect: 'vignette', intensity: 0.3 },
+        ],
+      },
     ],
   },
 
@@ -92,6 +224,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
     totalDuration: 28,
     mediaCount: 8,
     emoji: '✨',
+    colorGrade: 'pastel-dream',
     theme: {
       bgColor: '#0a0a0f',
       particles: 'none',
@@ -100,14 +233,46 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
     },
     defaultTexts: [],
     slots: [
-      { slotType: 'any', duration: 3.5, transition: 'fade', effect: 'static', holdPoint: 'center' },
-      { slotType: 'any', duration: 3.5, transition: 'fade', effect: 'static', holdPoint: 'center' },
-      { slotType: 'any', duration: 3.5, transition: 'fade', effect: 'pan-left', holdPoint: 'center' },
-      { slotType: 'any', duration: 3.5, transition: 'fade', effect: 'static', holdPoint: 'face' },
-      { slotType: 'any', duration: 3.5, transition: 'fade', effect: 'static', holdPoint: 'center' },
-      { slotType: 'any', duration: 3.5, transition: 'fade', effect: 'pan-right', holdPoint: 'center' },
-      { slotType: 'any', duration: 3.5, transition: 'fade', effect: 'static', holdPoint: 'face' },
-      { slotType: 'any', duration: 3.5, transition: 'fade', effect: 'static', holdPoint: 'center' },
+      {
+        slotType: 'any', duration: 3.5, transition: 'fade', effect: 'static', holdPoint: 'center',
+        transitionDuration: 0.6,
+        postEffects: [{ effect: 'colorGrade', intensity: 0.4, params: { preset: 'pastel-dream' } }],
+      },
+      {
+        slotType: 'any', duration: 3.5, transition: 'fade', effect: 'slow-zoom', holdPoint: 'center',
+        motionIntensity: 0.3, transitionDuration: 0.6,
+        postEffects: [{ effect: 'colorGrade', intensity: 0.4, params: { preset: 'pastel-dream' } }],
+      },
+      {
+        slotType: 'any', duration: 3.5, transition: 'fade', effect: 'drift', holdPoint: 'center',
+        motionIntensity: 0.25, transitionDuration: 0.6,
+        postEffects: [{ effect: 'colorGrade', intensity: 0.4, params: { preset: 'pastel-dream' } }],
+      },
+      {
+        slotType: 'any', duration: 3.5, transition: 'fade', effect: 'static', holdPoint: 'face',
+        transitionDuration: 0.6,
+        postEffects: [{ effect: 'colorGrade', intensity: 0.4, params: { preset: 'pastel-dream' } }],
+      },
+      {
+        slotType: 'any', duration: 3.5, transition: 'fade', effect: 'slow-zoom', holdPoint: 'center',
+        motionIntensity: 0.3, transitionDuration: 0.6,
+        postEffects: [{ effect: 'colorGrade', intensity: 0.4, params: { preset: 'pastel-dream' } }],
+      },
+      {
+        slotType: 'any', duration: 3.5, transition: 'fade', effect: 'drift', holdPoint: 'center',
+        motionIntensity: 0.25, transitionDuration: 0.6,
+        postEffects: [{ effect: 'colorGrade', intensity: 0.4, params: { preset: 'pastel-dream' } }],
+      },
+      {
+        slotType: 'any', duration: 3.5, transition: 'fade', effect: 'static', holdPoint: 'face',
+        transitionDuration: 0.6,
+        postEffects: [{ effect: 'colorGrade', intensity: 0.4, params: { preset: 'pastel-dream' } }],
+      },
+      {
+        slotType: 'any', duration: 3.5, transition: 'fade', effect: 'slow-zoom', holdPoint: 'center',
+        motionIntensity: 0.3, transitionDuration: 0.8,
+        postEffects: [{ effect: 'colorGrade', intensity: 0.4, params: { preset: 'pastel-dream' } }],
+      },
     ],
   },
 
@@ -123,6 +288,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
     totalDuration: 24,
     mediaCount: 8,
     emoji: '📼',
+    colorGrade: 'retro-vhs',
     theme: {
       bgColor: '#000',
       mediaFilter: 'saturate(0.6) contrast(1.2) sepia(0.3)',
@@ -135,14 +301,88 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
       { text: 'PLAY ▶', position: 'center', fontSize: 'lg', fontWeight: 'bold', animation: 'glitch-in', color: '#fff' },
     ],
     slots: [
-      { slotType: 'any', duration: 3, transition: 'glitch', effect: 'static', holdPoint: 'center', textOverlay: { text: 'PLAY ▶', position: 'center', fontSize: 'lg', fontWeight: 'bold', animation: 'glitch-in', color: '#fff' } },
-      { slotType: 'any', duration: 2.5, transition: 'glitch', effect: 'pan-left', holdPoint: 'face' },
-      { slotType: 'any', duration: 4, transition: 'fade', effect: 'slow-zoom', holdPoint: 'center' },
-      { slotType: 'any', duration: 2.5, transition: 'glitch', effect: 'static', holdPoint: 'face' },
-      { slotType: 'any', duration: 3, transition: 'glitch', effect: 'pan-right', holdPoint: 'center' },
-      { slotType: 'any', duration: 3, transition: 'fade', effect: 'ken-burns', holdPoint: 'face' },
-      { slotType: 'any', duration: 3, transition: 'glitch', effect: 'static', holdPoint: 'center' },
-      { slotType: 'any', duration: 3, transition: 'fade', effect: 'slow-zoom', holdPoint: 'face' },
+      {
+        slotType: 'any', duration: 3, transition: 'glitchBlocks', effect: 'static', holdPoint: 'center',
+        transitionDuration: 0.3,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.8, params: { preset: 'vintage-fade' } },
+          { effect: 'scanlines', intensity: 0.6 },
+          { effect: 'filmGrain', intensity: 0.5 },
+          { effect: 'vignette', intensity: 0.5 },
+          { effect: 'chromaticAberration', intensity: 0.3 },
+        ],
+        textOverlay: { text: 'PLAY ▶', position: 'center', fontSize: 'lg', fontWeight: 'bold', animation: 'glitch-in', color: '#fff' },
+      },
+      {
+        slotType: 'any', duration: 2.5, transition: 'rgbSplitWipe', effect: 'drift', holdPoint: 'face',
+        motionIntensity: 0.4, transitionDuration: 0.3,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.8, params: { preset: 'vintage-fade' } },
+          { effect: 'scanlines', intensity: 0.5 },
+          { effect: 'filmGrain', intensity: 0.4 },
+          { effect: 'vignette', intensity: 0.4 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 4, transition: 'fade', effect: 'slow-zoom', holdPoint: 'center',
+        motionIntensity: 0.4,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.8, params: { preset: 'vintage-fade' } },
+          { effect: 'scanlines', intensity: 0.5 },
+          { effect: 'filmGrain', intensity: 0.4 },
+          { effect: 'vignette', intensity: 0.4 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 2.5, transition: 'glitchBlocks', effect: 'static', holdPoint: 'face',
+        transitionDuration: 0.25,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.8, params: { preset: 'vintage-fade' } },
+          { effect: 'scanlines', intensity: 0.6 },
+          { effect: 'filmGrain', intensity: 0.5 },
+          { effect: 'chromaticAberration', intensity: 0.4 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 3, transition: 'pixelateCrossfade', effect: 'pan-right', holdPoint: 'center',
+        motionIntensity: 0.4, transitionDuration: 0.4,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.8, params: { preset: 'vintage-fade' } },
+          { effect: 'scanlines', intensity: 0.5 },
+          { effect: 'filmGrain', intensity: 0.4 },
+          { effect: 'vignette', intensity: 0.4 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 3, transition: 'fade', effect: 'ken-burns', holdPoint: 'face',
+        motionIntensity: 0.5,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.8, params: { preset: 'vintage-fade' } },
+          { effect: 'scanlines', intensity: 0.5 },
+          { effect: 'filmGrain', intensity: 0.4 },
+          { effect: 'lightLeak', intensity: 0.3 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 3, transition: 'rgbSplitWipe', effect: 'static', holdPoint: 'center',
+        transitionDuration: 0.3,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.8, params: { preset: 'vintage-fade' } },
+          { effect: 'scanlines', intensity: 0.6 },
+          { effect: 'filmGrain', intensity: 0.5 },
+          { effect: 'vignette', intensity: 0.5 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 3, transition: 'fade', effect: 'slow-zoom', holdPoint: 'face',
+        motionIntensity: 0.4, transitionDuration: 0.6,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.8, params: { preset: 'vintage-fade' } },
+          { effect: 'scanlines', intensity: 0.5 },
+          { effect: 'filmGrain', intensity: 0.5 },
+          { effect: 'vignette', intensity: 0.5 },
+        ],
+      },
     ],
   },
 
@@ -158,6 +398,8 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
     totalDuration: 18,
     mediaCount: 10,
     emoji: '🔥',
+    colorGrade: 'neon-night',
+    defaultSpeed: 'ramp-pulse',
     theme: {
       bgColor: '#000',
       mediaFilter: 'hue-rotate(10deg) contrast(1.1)',
@@ -169,16 +411,92 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
       { text: 'SYSTEM ONLINE', position: 'center', fontSize: 'lg', fontWeight: 'black', animation: 'glitch-in', color: '#00FFFF' },
     ],
     slots: [
-      { slotType: 'any', duration: 1.5, transition: 'glitch', effect: 'bounce', holdPoint: 'center', textOverlay: { text: 'SYSTEM ONLINE', position: 'center', fontSize: 'lg', fontWeight: 'black', animation: 'glitch-in', color: '#00FFFF' } },
-      { slotType: 'any', duration: 2, transition: 'zoom-in', effect: 'static', holdPoint: 'face' },
-      { slotType: 'any', duration: 1.5, transition: 'glitch', effect: 'bounce', holdPoint: 'center' },
-      { slotType: 'any', duration: 2.5, transition: 'slide-left', effect: 'pan-left', holdPoint: 'face' },
-      { slotType: 'any', duration: 1.5, transition: 'glitch', effect: 'static', holdPoint: 'center' },
-      { slotType: 'any', duration: 2, transition: 'zoom-out', effect: 'bounce', holdPoint: 'face' },
-      { slotType: 'any', duration: 1.5, transition: 'glitch', effect: 'static', holdPoint: 'center' },
-      { slotType: 'any', duration: 1.5, transition: 'slide-right', effect: 'bounce', holdPoint: 'face' },
-      { slotType: 'any', duration: 2, transition: 'glitch', effect: 'slow-zoom', holdPoint: 'center' },
-      { slotType: 'any', duration: 2, transition: 'fade', effect: 'ken-burns', holdPoint: 'face' },
+      {
+        slotType: 'any', duration: 1.5, transition: 'glitchBlocks', effect: 'pulse-zoom', holdPoint: 'center',
+        motionIntensity: 0.9, transitionDuration: 0.2, speedPreset: 'ramp-pulse',
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'neon-night' } },
+          { effect: 'chromaticAberration', intensity: 0.5 },
+          { effect: 'scanlines', intensity: 0.3 },
+        ],
+        textOverlay: { text: 'SYSTEM ONLINE', position: 'center', fontSize: 'lg', fontWeight: 'black', animation: 'glitch-in', color: '#00FFFF' },
+      },
+      {
+        slotType: 'any', duration: 2, transition: 'flashWhite', effect: 'dolly-in', holdPoint: 'face',
+        motionIntensity: 0.8, transitionDuration: 0.1,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'neon-night' } },
+          { effect: 'chromaticAberration', intensity: 0.3 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 1.5, transition: 'rgbSplitWipe', effect: 'bounce', holdPoint: 'center',
+        motionIntensity: 0.9, transitionDuration: 0.25, speedPreset: 'ramp-dramatic',
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'neon-night' } },
+          { effect: 'chromaticAberration', intensity: 0.5 },
+          { effect: 'scanlines', intensity: 0.2 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 2.5, transition: 'whipBlur', effect: 'whip-pan', holdPoint: 'face',
+        motionIntensity: 0.8, transitionDuration: 0.2,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'neon-night' } },
+          { effect: 'motionBlur', intensity: 0.3 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 1.5, transition: 'glitchBlocks', effect: 'pixelate-reveal', holdPoint: 'center',
+        motionIntensity: 0.8, transitionDuration: 0.2,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'neon-night' } },
+          { effect: 'chromaticAberration', intensity: 0.6 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 2, transition: 'flashBlack', effect: 'orbit', holdPoint: 'face',
+        motionIntensity: 0.7, transitionDuration: 0.15, speedPreset: 'ramp-pulse',
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'neon-night' } },
+          { effect: 'bloom', intensity: 0.3 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 1.5, transition: 'rgbSplitWipe', effect: 'mirror', holdPoint: 'center',
+        motionIntensity: 0.8, transitionDuration: 0.2,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'neon-night' } },
+          { effect: 'chromaticAberration', intensity: 0.4 },
+          { effect: 'scanlines', intensity: 0.3 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 1.5, transition: 'glitchBlocks', effect: 'bounce', holdPoint: 'face',
+        motionIntensity: 0.9, transitionDuration: 0.2,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'neon-night' } },
+          { effect: 'chromaticAberration', intensity: 0.5 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 2, transition: 'pixelateCrossfade', effect: 'speed-ramp', holdPoint: 'center',
+        motionIntensity: 0.8, transitionDuration: 0.3, speedPreset: 'ramp-dramatic',
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'neon-night' } },
+          { effect: 'chromaticAberration', intensity: 0.4 },
+          { effect: 'bloom', intensity: 0.2 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 2, transition: 'fade', effect: 'dolly-out', holdPoint: 'face',
+        motionIntensity: 0.6, transitionDuration: 0.4,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'neon-night' } },
+          { effect: 'vignette', intensity: 0.5 },
+          { effect: 'chromaticAberration', intensity: 0.3 },
+        ],
+      },
     ],
   },
 
@@ -194,6 +512,8 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
     totalDuration: 30,
     mediaCount: 7,
     emoji: '🌀',
+    colorGrade: 'cool-teal',
+    defaultSpeed: 'decelerate',
     theme: {
       bgColor: '#000',
       particles: 'none',
@@ -202,13 +522,65 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
     },
     defaultTexts: [],
     slots: [
-      { slotType: 'any', duration: 5, transition: 'fade', effect: 'parallax', holdPoint: 'face' },
-      { slotType: 'any', duration: 3.5, transition: 'slide-left', effect: 'parallax', holdPoint: 'center' },
-      { slotType: 'any', duration: 4.5, transition: 'fade', effect: 'ken-burns', holdPoint: 'face' },
-      { slotType: 'any', duration: 4, transition: 'slide-right', effect: 'parallax', holdPoint: 'rule-of-thirds' },
-      { slotType: 'any', duration: 5, transition: 'fade', effect: 'parallax', holdPoint: 'face' },
-      { slotType: 'any', duration: 3.5, transition: 'zoom-in', effect: 'slow-zoom', holdPoint: 'center' },
-      { slotType: 'any', duration: 4.5, transition: 'fade', effect: 'parallax', holdPoint: 'face' },
+      {
+        slotType: 'any', duration: 5, transition: 'morphDissolve', effect: 'parallax', holdPoint: 'face',
+        motionIntensity: 0.7, motionEasing: 'smoothStep', transitionDuration: 0.5,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.5, params: { preset: 'cool-teal' } },
+          { effect: 'vignette', intensity: 0.3 },
+        ],
+        speedPreset: 'decelerate',
+      },
+      {
+        slotType: 'any', duration: 3.5, transition: 'curtain', effect: 'tilt-shift', holdPoint: 'center',
+        motionIntensity: 0.6, motionEasing: 'easeInOut', transitionDuration: 0.4,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.5, params: { preset: 'cool-teal' } },
+          { effect: 'vignette', intensity: 0.2 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 4.5, transition: 'fade', effect: 'dolly-in', holdPoint: 'face',
+        motionIntensity: 0.6, motionEasing: 'easeOut',
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.5, params: { preset: 'cool-teal' } },
+          { effect: 'vignette', intensity: 0.3 },
+          { effect: 'bloom', intensity: 0.15 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 4, transition: 'irisWipe', effect: 'parallax', holdPoint: 'rule-of-thirds',
+        motionIntensity: 0.7, motionEasing: 'smoothStep', transitionDuration: 0.5,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.5, params: { preset: 'cool-teal' } },
+          { effect: 'vignette', intensity: 0.2 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 5, transition: 'morphDissolve', effect: 'crane-up', holdPoint: 'face',
+        motionIntensity: 0.5, motionEasing: 'easeInOut', transitionDuration: 0.6,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.5, params: { preset: 'cool-teal' } },
+          { effect: 'vignette', intensity: 0.3 },
+        ],
+        speedPreset: 'decelerate',
+      },
+      {
+        slotType: 'any', duration: 3.5, transition: 'radialWipe', effect: 'drift', holdPoint: 'center',
+        motionIntensity: 0.5, motionEasing: 'easeOut', transitionDuration: 0.4,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.5, params: { preset: 'cool-teal' } },
+          { effect: 'vignette', intensity: 0.2 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 4.5, transition: 'fade', effect: 'parallax', holdPoint: 'face',
+        motionIntensity: 0.7, motionEasing: 'smoothStep', transitionDuration: 0.8,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.5, params: { preset: 'cool-teal' } },
+          { effect: 'vignette', intensity: 0.4 },
+        ],
+      },
     ],
   },
 
@@ -224,6 +596,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
     totalDuration: 28,
     mediaCount: 8,
     emoji: '☀️',
+    colorGrade: 'golden-hour',
     theme: {
       mediaFilter: 'saturate(1.3) brightness(1.05)',
       bgColor: '#1a0f00',
@@ -237,14 +610,79 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
       { text: 'good times only', position: 'bottom', fontSize: 'md', fontWeight: 'normal', animation: 'fade-in', color: '#fff' },
     ],
     slots: [
-      { slotType: 'any', duration: 4, transition: 'fade', effect: 'slow-zoom', holdPoint: 'face', textOverlay: { text: 'SUMMER VIBES ☀️', position: 'center', fontSize: 'xl', fontWeight: 'black', animation: 'scale-pop', color: '#FFD700', glowColor: 'rgba(255,140,0,0.6)' } },
-      { slotType: 'any', duration: 3, transition: 'fade', effect: 'ken-burns', holdPoint: 'center' },
-      { slotType: 'any', duration: 3.5, transition: 'slide-left', effect: 'pan-left', holdPoint: 'rule-of-thirds' },
-      { slotType: 'any', duration: 4, transition: 'fade', effect: 'slow-zoom', holdPoint: 'face' },
-      { slotType: 'any', duration: 3, transition: 'fade', effect: 'pan-right', holdPoint: 'center' },
-      { slotType: 'any', duration: 3.5, transition: 'slide-right', effect: 'ken-burns', holdPoint: 'rule-of-thirds' },
-      { slotType: 'any', duration: 3.5, transition: 'fade', effect: 'slow-zoom', holdPoint: 'face' },
-      { slotType: 'any', duration: 3.5, transition: 'fade', effect: 'pan-left', holdPoint: 'center', textOverlay: { text: 'good times only', position: 'bottom', fontSize: 'md', fontWeight: 'normal', animation: 'fade-in', color: '#fff' } },
+      {
+        slotType: 'any', duration: 4, transition: 'morphDissolve', effect: 'dolly-in', holdPoint: 'face',
+        motionIntensity: 0.5, motionEasing: 'easeOut', transitionDuration: 0.5,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.6, params: { preset: 'golden-hour' } },
+          { effect: 'lensFlare', intensity: 0.3 },
+          { effect: 'bloom', intensity: 0.25 },
+          { effect: 'vignette', intensity: 0.2 },
+        ],
+        textOverlay: { text: 'SUMMER VIBES ☀️', position: 'center', fontSize: 'xl', fontWeight: 'black', animation: 'scale-pop', color: '#FFD700', glowColor: 'rgba(255,140,0,0.6)' },
+      },
+      {
+        slotType: 'any', duration: 3, transition: 'fade', effect: 'ken-burns', holdPoint: 'center',
+        motionIntensity: 0.5,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.6, params: { preset: 'golden-hour' } },
+          { effect: 'lightLeak', intensity: 0.3 },
+          { effect: 'bloom', intensity: 0.2 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 3.5, transition: 'curtain', effect: 'drift', holdPoint: 'rule-of-thirds',
+        motionIntensity: 0.5, transitionDuration: 0.4,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.6, params: { preset: 'golden-hour' } },
+          { effect: 'lensFlare', intensity: 0.2 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 4, transition: 'fade', effect: 'crane-up', holdPoint: 'face',
+        motionIntensity: 0.4, motionEasing: 'easeOut',
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.6, params: { preset: 'golden-hour' } },
+          { effect: 'bloom', intensity: 0.25 },
+          { effect: 'lightLeak', intensity: 0.25 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 3, transition: 'radialWipe', effect: 'orbit', holdPoint: 'center',
+        motionIntensity: 0.4, transitionDuration: 0.4,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.6, params: { preset: 'golden-hour' } },
+          { effect: 'lensFlare', intensity: 0.3 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 3.5, transition: 'fade', effect: 'dolly-out', holdPoint: 'rule-of-thirds',
+        motionIntensity: 0.5,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.6, params: { preset: 'golden-hour' } },
+          { effect: 'bloom', intensity: 0.2 },
+          { effect: 'lightLeak', intensity: 0.2 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 3.5, transition: 'morphDissolve', effect: 'ken-burns', holdPoint: 'face',
+        motionIntensity: 0.5, transitionDuration: 0.5,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.6, params: { preset: 'golden-hour' } },
+          { effect: 'lensFlare', intensity: 0.25 },
+          { effect: 'vignette', intensity: 0.2 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 3.5, transition: 'fade', effect: 'drift', holdPoint: 'center',
+        motionIntensity: 0.4, transitionDuration: 0.6,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.6, params: { preset: 'golden-hour' } },
+          { effect: 'bloom', intensity: 0.3 },
+          { effect: 'vignette', intensity: 0.3 },
+        ],
+        textOverlay: { text: 'good times only', position: 'bottom', fontSize: 'md', fontWeight: 'normal', animation: 'fade-in', color: '#fff' },
+      },
     ],
   },
 
@@ -260,6 +698,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
     totalDuration: 30,
     mediaCount: 8,
     emoji: '❄️',
+    colorGrade: 'moonlit',
     theme: {
       mediaFilter: 'brightness(1.05) saturate(0.85) hue-rotate(-10deg)',
       bgColor: '#050a14',
@@ -273,14 +712,77 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
       { text: 'warmth in every moment', position: 'bottom', fontSize: 'md', fontWeight: 'normal', animation: 'fade-in', color: '#C8DDEF' },
     ],
     slots: [
-      { slotType: 'any', duration: 4.5, transition: 'fade', effect: 'slow-zoom', holdPoint: 'face', textOverlay: { text: 'WINTER WONDERLAND ❄️', position: 'center', fontSize: 'xl', fontWeight: 'bold', animation: 'slide-up', color: '#E0F0FF', glowColor: 'rgba(135,206,235,0.5)' } },
-      { slotType: 'any', duration: 3.5, transition: 'fade', effect: 'ken-burns', holdPoint: 'center' },
-      { slotType: 'any', duration: 4, transition: 'fade', effect: 'pan-left', holdPoint: 'rule-of-thirds' },
-      { slotType: 'any', duration: 3.5, transition: 'fade', effect: 'slow-zoom', holdPoint: 'face' },
-      { slotType: 'any', duration: 4, transition: 'slide-left', effect: 'ken-burns', holdPoint: 'center' },
-      { slotType: 'any', duration: 3.5, transition: 'fade', effect: 'static', holdPoint: 'face' },
-      { slotType: 'any', duration: 3.5, transition: 'fade', effect: 'pan-right', holdPoint: 'rule-of-thirds' },
-      { slotType: 'any', duration: 3.5, transition: 'fade', effect: 'slow-zoom', holdPoint: 'center', textOverlay: { text: 'warmth in every moment', position: 'bottom', fontSize: 'md', fontWeight: 'normal', animation: 'fade-in', color: '#C8DDEF' } },
+      {
+        slotType: 'any', duration: 4.5, transition: 'morphDissolve', effect: 'crane-down', holdPoint: 'face',
+        motionIntensity: 0.4, motionEasing: 'easeOut', transitionDuration: 0.6,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.6, params: { preset: 'cool-teal' } },
+          { effect: 'bloom', intensity: 0.3 },
+          { effect: 'vignette', intensity: 0.3 },
+        ],
+        textOverlay: { text: 'WINTER WONDERLAND ❄️', position: 'center', fontSize: 'xl', fontWeight: 'bold', animation: 'slide-up', color: '#E0F0FF', glowColor: 'rgba(135,206,235,0.5)' },
+      },
+      {
+        slotType: 'any', duration: 3.5, transition: 'fade', effect: 'ken-burns', holdPoint: 'center',
+        motionIntensity: 0.5,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.6, params: { preset: 'cool-teal' } },
+          { effect: 'bloom', intensity: 0.25 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 4, transition: 'irisWipe', effect: 'drift', holdPoint: 'rule-of-thirds',
+        motionIntensity: 0.4, transitionDuration: 0.5,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.6, params: { preset: 'cool-teal' } },
+          { effect: 'bloom', intensity: 0.2 },
+          { effect: 'vignette', intensity: 0.2 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 3.5, transition: 'fade', effect: 'dolly-in', holdPoint: 'face',
+        motionIntensity: 0.4, motionEasing: 'easeInOut',
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.6, params: { preset: 'cool-teal' } },
+          { effect: 'bloom', intensity: 0.3 },
+          { effect: 'lightLeak', intensity: 0.15 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 4, transition: 'curtain', effect: 'parallax', holdPoint: 'center',
+        motionIntensity: 0.5, transitionDuration: 0.4,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.6, params: { preset: 'cool-teal' } },
+          { effect: 'bloom', intensity: 0.25 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 3.5, transition: 'fade', effect: 'rack-focus', holdPoint: 'face',
+        motionIntensity: 0.4,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.6, params: { preset: 'cool-teal' } },
+          { effect: 'bloom', intensity: 0.2 },
+          { effect: 'vignette', intensity: 0.3 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 3.5, transition: 'morphDissolve', effect: 'dolly-out', holdPoint: 'rule-of-thirds',
+        motionIntensity: 0.4, transitionDuration: 0.5,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.6, params: { preset: 'cool-teal' } },
+          { effect: 'bloom', intensity: 0.25 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 3.5, transition: 'fade', effect: 'slow-zoom', holdPoint: 'center',
+        motionIntensity: 0.3, transitionDuration: 0.8,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.6, params: { preset: 'cool-teal' } },
+          { effect: 'bloom', intensity: 0.3 },
+          { effect: 'vignette', intensity: 0.4 },
+        ],
+        textOverlay: { text: 'warmth in every moment', position: 'bottom', fontSize: 'md', fontWeight: 'normal', animation: 'fade-in', color: '#C8DDEF' },
+      },
     ],
   },
 
@@ -296,6 +798,8 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
     totalDuration: 22,
     mediaCount: 10,
     emoji: '🎉',
+    colorGrade: 'electric-pop',
+    defaultSpeed: 'ramp-classic',
     theme: {
       mediaFilter: 'contrast(1.15) saturate(1.2)',
       bgColor: '#0a0008',
@@ -309,16 +813,77 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
       { text: 'WHAT A NIGHT', position: 'center', fontSize: 'lg', fontWeight: 'bold', animation: 'slide-up', color: '#FFD700' },
     ],
     slots: [
-      { slotType: 'any', duration: 2, transition: 'zoom-in', effect: 'bounce', holdPoint: 'center', textOverlay: { text: "LET'S PARTY 🎉", position: 'center', fontSize: 'xl', fontWeight: 'black', animation: 'scale-pop', color: '#FF1493', glowColor: 'rgba(255,20,147,0.7)' } },
-      { slotType: 'any', duration: 1.5, transition: 'slide-left', effect: 'static', holdPoint: 'face' },
-      { slotType: 'any', duration: 2.5, transition: 'slide-right', effect: 'ken-burns', holdPoint: 'center' },
-      { slotType: 'any', duration: 2, transition: 'glitch', effect: 'bounce', holdPoint: 'face' },
-      { slotType: 'any', duration: 2, transition: 'zoom-out', effect: 'pan-left', holdPoint: 'center' },
-      { slotType: 'any', duration: 2.5, transition: 'slide-left', effect: 'slow-zoom', holdPoint: 'face' },
-      { slotType: 'any', duration: 2, transition: 'zoom-in', effect: 'bounce', holdPoint: 'center' },
-      { slotType: 'any', duration: 2, transition: 'glitch', effect: 'static', holdPoint: 'face' },
-      { slotType: 'any', duration: 2.5, transition: 'slide-right', effect: 'pan-right', holdPoint: 'rule-of-thirds' },
-      { slotType: 'any', duration: 3, transition: 'fade', effect: 'slow-zoom', holdPoint: 'center', textOverlay: { text: 'WHAT A NIGHT', position: 'center', fontSize: 'lg', fontWeight: 'bold', animation: 'slide-up', color: '#FFD700' } },
+      {
+        slotType: 'any', duration: 2, transition: 'flashWhite', effect: 'pulse-zoom', holdPoint: 'center',
+        motionIntensity: 0.9, transitionDuration: 0.15, speedPreset: 'ramp-pulse',
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.5, params: { preset: 'electric-pop' } },
+          { effect: 'bloom', intensity: 0.3 },
+        ],
+        textOverlay: { text: "LET'S PARTY 🎉", position: 'center', fontSize: 'xl', fontWeight: 'black', animation: 'scale-pop', color: '#FF1493', glowColor: 'rgba(255,20,147,0.7)' },
+      },
+      {
+        slotType: 'any', duration: 1.5, transition: 'whipBlur', effect: 'whip-pan', holdPoint: 'face',
+        motionIntensity: 0.8, transitionDuration: 0.2,
+        postEffects: [{ effect: 'colorGrade', intensity: 0.5, params: { preset: 'electric-pop' } }],
+      },
+      {
+        slotType: 'any', duration: 2.5, transition: 'cubeRotate', effect: 'orbit', holdPoint: 'center',
+        motionIntensity: 0.7, transitionDuration: 0.3, speedPreset: 'ramp-classic',
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.5, params: { preset: 'electric-pop' } },
+          { effect: 'bloom', intensity: 0.2 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 2, transition: 'glitchBlocks', effect: 'bounce', holdPoint: 'face',
+        motionIntensity: 0.9, transitionDuration: 0.2,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.5, params: { preset: 'electric-pop' } },
+          { effect: 'chromaticAberration', intensity: 0.2 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 2, transition: 'flashBlack', effect: 'dolly-in', holdPoint: 'center',
+        motionIntensity: 0.7, transitionDuration: 0.15,
+        postEffects: [{ effect: 'colorGrade', intensity: 0.5, params: { preset: 'electric-pop' } }],
+      },
+      {
+        slotType: 'any', duration: 2.5, transition: 'flipCard', effect: 'speed-ramp', holdPoint: 'face',
+        motionIntensity: 0.8, transitionDuration: 0.25, speedPreset: 'ramp-dramatic',
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.5, params: { preset: 'electric-pop' } },
+          { effect: 'bloom', intensity: 0.25 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 2, transition: 'whipBlur', effect: 'pulse-zoom', holdPoint: 'center',
+        motionIntensity: 0.9, transitionDuration: 0.2,
+        postEffects: [{ effect: 'colorGrade', intensity: 0.5, params: { preset: 'electric-pop' } }],
+      },
+      {
+        slotType: 'any', duration: 2, transition: 'rgbSplitWipe', effect: 'bounce', holdPoint: 'face',
+        motionIntensity: 0.8, transitionDuration: 0.2,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.5, params: { preset: 'electric-pop' } },
+          { effect: 'chromaticAberration', intensity: 0.3 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 2.5, transition: 'flashWhite', effect: 'whip-pan', holdPoint: 'rule-of-thirds',
+        motionIntensity: 0.8, transitionDuration: 0.15, speedPreset: 'ramp-pulse',
+        postEffects: [{ effect: 'colorGrade', intensity: 0.5, params: { preset: 'electric-pop' } }],
+      },
+      {
+        slotType: 'any', duration: 3, transition: 'fade', effect: 'slow-zoom', holdPoint: 'center',
+        motionIntensity: 0.5, transitionDuration: 0.5,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.5, params: { preset: 'electric-pop' } },
+          { effect: 'bloom', intensity: 0.3 },
+          { effect: 'vignette', intensity: 0.3 },
+        ],
+        textOverlay: { text: 'WHAT A NIGHT', position: 'center', fontSize: 'lg', fontWeight: 'bold', animation: 'slide-up', color: '#FFD700' },
+      },
     ],
   },
 
@@ -334,6 +899,8 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
     totalDuration: 24,
     mediaCount: 9,
     emoji: '⚡',
+    colorGrade: 'bleach-bypass',
+    defaultSpeed: 'ramp-dramatic',
     theme: {
       mediaFilter: 'contrast(1.2) brightness(0.95)',
       bgColor: '#000510',
@@ -347,15 +914,85 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
       { text: 'POWER UP', position: 'center', fontSize: 'lg', fontWeight: 'bold', animation: 'scale-pop', color: '#fff' },
     ],
     slots: [
-      { slotType: 'any', duration: 2.5, transition: 'glitch', effect: 'bounce', holdPoint: 'center', textOverlay: { text: '⚡ ELECTRIC ⚡', position: 'center', fontSize: 'xl', fontWeight: 'black', animation: 'glitch-in', color: '#00BFFF', glowColor: 'rgba(0,191,255,0.7)' } },
-      { slotType: 'any', duration: 2.5, transition: 'zoom-in', effect: 'ken-burns', holdPoint: 'face' },
-      { slotType: 'any', duration: 3, transition: 'slide-left', effect: 'pan-left', holdPoint: 'rule-of-thirds' },
-      { slotType: 'any', duration: 2.5, transition: 'glitch', effect: 'bounce', holdPoint: 'center' },
-      { slotType: 'any', duration: 3, transition: 'zoom-out', effect: 'slow-zoom', holdPoint: 'face' },
-      { slotType: 'any', duration: 2.5, transition: 'slide-right', effect: 'ken-burns', holdPoint: 'center' },
-      { slotType: 'any', duration: 2.5, transition: 'glitch', effect: 'pan-right', holdPoint: 'face' },
-      { slotType: 'any', duration: 3, transition: 'zoom-in', effect: 'bounce', holdPoint: 'rule-of-thirds' },
-      { slotType: 'any', duration: 2.5, transition: 'fade', effect: 'ken-burns', holdPoint: 'center', textOverlay: { text: 'POWER UP', position: 'center', fontSize: 'lg', fontWeight: 'bold', animation: 'scale-pop', color: '#fff' } },
+      {
+        slotType: 'any', duration: 2.5, transition: 'flashWhite', effect: 'pulse-zoom', holdPoint: 'center',
+        motionIntensity: 0.9, transitionDuration: 0.1, speedPreset: 'ramp-dramatic',
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'bleach-bypass' } },
+          { effect: 'bloom', intensity: 0.4 },
+          { effect: 'chromaticAberration', intensity: 0.3 },
+        ],
+        textOverlay: { text: '⚡ ELECTRIC ⚡', position: 'center', fontSize: 'xl', fontWeight: 'black', animation: 'glitch-in', color: '#00BFFF', glowColor: 'rgba(0,191,255,0.7)' },
+      },
+      {
+        slotType: 'any', duration: 2.5, transition: 'whipBlur', effect: 'dolly-in', holdPoint: 'face',
+        motionIntensity: 0.8, transitionDuration: 0.2,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'bleach-bypass' } },
+          { effect: 'bloom', intensity: 0.3 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 3, transition: 'rgbSplitWipe', effect: 'whip-pan', holdPoint: 'rule-of-thirds',
+        motionIntensity: 0.8, transitionDuration: 0.25,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'bleach-bypass' } },
+          { effect: 'motionBlur', intensity: 0.3 },
+          { effect: 'bloom', intensity: 0.2 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 2.5, transition: 'flashBlack', effect: 'bounce', holdPoint: 'center',
+        motionIntensity: 0.9, transitionDuration: 0.15, speedPreset: 'ramp-pulse',
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'bleach-bypass' } },
+          { effect: 'bloom', intensity: 0.4 },
+          { effect: 'chromaticAberration', intensity: 0.2 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 3, transition: 'shatter', effect: 'speed-ramp', holdPoint: 'face',
+        motionIntensity: 0.8, transitionDuration: 0.3, speedPreset: 'ramp-dramatic',
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'bleach-bypass' } },
+          { effect: 'bloom', intensity: 0.3 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 2.5, transition: 'glitchBlocks', effect: 'orbit', holdPoint: 'center',
+        motionIntensity: 0.7, transitionDuration: 0.2,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'bleach-bypass' } },
+          { effect: 'chromaticAberration', intensity: 0.3 },
+          { effect: 'bloom', intensity: 0.25 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 2.5, transition: 'whipBlur', effect: 'whip-pan', holdPoint: 'face',
+        motionIntensity: 0.8, transitionDuration: 0.2,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'bleach-bypass' } },
+          { effect: 'motionBlur', intensity: 0.3 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 3, transition: 'flashWhite', effect: 'pulse-zoom', holdPoint: 'rule-of-thirds',
+        motionIntensity: 0.9, transitionDuration: 0.15, speedPreset: 'ramp-pulse',
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'bleach-bypass' } },
+          { effect: 'bloom', intensity: 0.4 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 2.5, transition: 'fade', effect: 'dolly-out', holdPoint: 'center',
+        motionIntensity: 0.6, transitionDuration: 0.4,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'bleach-bypass' } },
+          { effect: 'bloom', intensity: 0.3 },
+          { effect: 'vignette', intensity: 0.5 },
+        ],
+        textOverlay: { text: 'POWER UP', position: 'center', fontSize: 'lg', fontWeight: 'bold', animation: 'scale-pop', color: '#fff' },
+      },
     ],
   },
 
@@ -371,6 +1008,8 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
     totalDuration: 32,
     mediaCount: 8,
     emoji: '🌅',
+    colorGrade: 'golden-hour',
+    defaultSpeed: 'slow-mo',
     theme: {
       mediaFilter: 'saturate(1.2) brightness(1.08) sepia(0.15)',
       bgColor: '#0f0800',
@@ -384,14 +1023,83 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
       { text: 'forever yours', position: 'bottom', fontSize: 'md', fontWeight: 'normal', animation: 'fade-in', color: '#FFF5E6' },
     ],
     slots: [
-      { slotType: 'any', duration: 5, transition: 'fade', effect: 'ken-burns', holdPoint: 'face', textOverlay: { text: 'golden hour', position: 'center', fontSize: 'xl', fontWeight: 'normal', animation: 'fade-in', color: '#FFF5E6' } },
-      { slotType: 'any', duration: 4, transition: 'fade', effect: 'slow-zoom', holdPoint: 'center' },
-      { slotType: 'any', duration: 3.5, transition: 'fade', effect: 'pan-left', holdPoint: 'rule-of-thirds' },
-      { slotType: 'any', duration: 4.5, transition: 'fade', effect: 'ken-burns', holdPoint: 'face' },
-      { slotType: 'any', duration: 4, transition: 'slide-left', effect: 'slow-zoom', holdPoint: 'center' },
-      { slotType: 'any', duration: 3.5, transition: 'fade', effect: 'pan-right', holdPoint: 'face' },
-      { slotType: 'any', duration: 3.5, transition: 'fade', effect: 'ken-burns', holdPoint: 'rule-of-thirds' },
-      { slotType: 'any', duration: 4, transition: 'fade', effect: 'slow-zoom', holdPoint: 'center', textOverlay: { text: 'forever yours', position: 'bottom', fontSize: 'md', fontWeight: 'normal', animation: 'fade-in', color: '#FFF5E6' } },
+      {
+        slotType: 'any', duration: 5, transition: 'morphDissolve', effect: 'dolly-in', holdPoint: 'face',
+        motionIntensity: 0.4, motionEasing: 'easeOut', transitionDuration: 0.8, speedPreset: 'slow-mo',
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'warm-cinematic' } },
+          { effect: 'lensFlare', intensity: 0.35 },
+          { effect: 'bloom', intensity: 0.35 },
+          { effect: 'vignette', intensity: 0.3 },
+        ],
+        textOverlay: { text: 'golden hour', position: 'center', fontSize: 'xl', fontWeight: 'normal', animation: 'fade-in', color: '#FFF5E6' },
+      },
+      {
+        slotType: 'any', duration: 4, transition: 'fade', effect: 'crane-up', holdPoint: 'center',
+        motionIntensity: 0.3, motionEasing: 'easeInOut',
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'warm-cinematic' } },
+          { effect: 'lightLeak', intensity: 0.3 },
+          { effect: 'bloom', intensity: 0.3 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 3.5, transition: 'radialWipe', effect: 'drift', holdPoint: 'rule-of-thirds',
+        motionIntensity: 0.4, transitionDuration: 0.5,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'warm-cinematic' } },
+          { effect: 'lensFlare', intensity: 0.25 },
+          { effect: 'bloom', intensity: 0.25 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 4.5, transition: 'morphDissolve', effect: 'ken-burns', holdPoint: 'face',
+        motionIntensity: 0.5, transitionDuration: 0.7, speedPreset: 'decelerate',
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'warm-cinematic' } },
+          { effect: 'bloom', intensity: 0.3 },
+          { effect: 'vignette', intensity: 0.3 },
+          { effect: 'lightLeak', intensity: 0.2 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 4, transition: 'curtain', effect: 'rack-focus', holdPoint: 'center',
+        motionIntensity: 0.4, motionEasing: 'easeInOut', transitionDuration: 0.4,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'warm-cinematic' } },
+          { effect: 'lensFlare', intensity: 0.3 },
+          { effect: 'bloom', intensity: 0.25 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 3.5, transition: 'fade', effect: 'crane-down', holdPoint: 'face',
+        motionIntensity: 0.3, motionEasing: 'easeOut',
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'warm-cinematic' } },
+          { effect: 'bloom', intensity: 0.3 },
+          { effect: 'lightLeak', intensity: 0.25 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 3.5, transition: 'morphDissolve', effect: 'dolly-out', holdPoint: 'rule-of-thirds',
+        motionIntensity: 0.4, transitionDuration: 0.6,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'warm-cinematic' } },
+          { effect: 'lensFlare', intensity: 0.3 },
+          { effect: 'vignette', intensity: 0.3 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 4, transition: 'fade', effect: 'slow-zoom', holdPoint: 'center',
+        motionIntensity: 0.3, transitionDuration: 1.0, speedPreset: 'slow-mo',
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'warm-cinematic' } },
+          { effect: 'bloom', intensity: 0.4 },
+          { effect: 'vignette', intensity: 0.4 },
+          { effect: 'lensFlare', intensity: 0.2 },
+        ],
+        textOverlay: { text: 'forever yours', position: 'bottom', fontSize: 'md', fontWeight: 'normal', animation: 'fade-in', color: '#FFF5E6' },
+      },
     ],
   },
 
@@ -407,6 +1115,8 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
     totalDuration: 22,
     mediaCount: 10,
     emoji: '💜',
+    colorGrade: 'neon-night',
+    defaultSpeed: 'ramp-pulse',
     theme: {
       mediaFilter: 'contrast(1.15) saturate(1.3) hue-rotate(5deg)',
       bgColor: '#05000a',
@@ -420,16 +1130,94 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
       { text: 'fade to black', position: 'bottom', fontSize: 'md', fontWeight: 'normal', animation: 'typewriter', color: '#D8B4FE' },
     ],
     slots: [
-      { slotType: 'any', duration: 2.5, transition: 'glitch', effect: 'bounce', holdPoint: 'center', textOverlay: { text: 'NEON DREAMS 💜', position: 'center', fontSize: 'xl', fontWeight: 'black', animation: 'glitch-in', color: '#BF00FF', glowColor: 'rgba(191,0,255,0.8)' } },
-      { slotType: 'any', duration: 2, transition: 'slide-left', effect: 'pan-left', holdPoint: 'face' },
-      { slotType: 'any', duration: 2, transition: 'zoom-in', effect: 'slow-zoom', holdPoint: 'center' },
-      { slotType: 'any', duration: 2.5, transition: 'slide-right', effect: 'bounce', holdPoint: 'rule-of-thirds' },
-      { slotType: 'any', duration: 2, transition: 'glitch', effect: 'pan-right', holdPoint: 'face' },
-      { slotType: 'any', duration: 2, transition: 'zoom-out', effect: 'ken-burns', holdPoint: 'center' },
-      { slotType: 'any', duration: 2, transition: 'slide-left', effect: 'bounce', holdPoint: 'face' },
-      { slotType: 'any', duration: 2.5, transition: 'glitch', effect: 'slow-zoom', holdPoint: 'center' },
-      { slotType: 'any', duration: 2, transition: 'zoom-in', effect: 'pan-left', holdPoint: 'rule-of-thirds' },
-      { slotType: 'any', duration: 2.5, transition: 'fade', effect: 'static', holdPoint: 'center', textOverlay: { text: 'fade to black', position: 'bottom', fontSize: 'md', fontWeight: 'normal', animation: 'typewriter', color: '#D8B4FE' } },
+      {
+        slotType: 'any', duration: 2.5, transition: 'swirl', effect: 'pulse-zoom', holdPoint: 'center',
+        motionIntensity: 0.8, transitionDuration: 0.3, speedPreset: 'ramp-pulse',
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'neon-night' } },
+          { effect: 'bloom', intensity: 0.4 },
+          { effect: 'chromaticAberration', intensity: 0.3 },
+        ],
+        textOverlay: { text: 'NEON DREAMS 💜', position: 'center', fontSize: 'xl', fontWeight: 'black', animation: 'glitch-in', color: '#BF00FF', glowColor: 'rgba(191,0,255,0.8)' },
+      },
+      {
+        slotType: 'any', duration: 2, transition: 'whipBlur', effect: 'whip-pan', holdPoint: 'face',
+        motionIntensity: 0.8, transitionDuration: 0.2,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'neon-night' } },
+          { effect: 'bloom', intensity: 0.3 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 2, transition: 'flashBlack', effect: 'orbit', holdPoint: 'center',
+        motionIntensity: 0.7, transitionDuration: 0.15, speedPreset: 'ramp-dramatic',
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'neon-night' } },
+          { effect: 'bloom', intensity: 0.35 },
+          { effect: 'chromaticAberration', intensity: 0.2 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 2.5, transition: 'rgbSplitWipe', effect: 'bounce', holdPoint: 'rule-of-thirds',
+        motionIntensity: 0.9, transitionDuration: 0.25,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'neon-night' } },
+          { effect: 'chromaticAberration', intensity: 0.4 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 2, transition: 'glitchBlocks', effect: 'mirror', holdPoint: 'face',
+        motionIntensity: 0.8, transitionDuration: 0.2,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'neon-night' } },
+          { effect: 'bloom', intensity: 0.3 },
+          { effect: 'scanlines', intensity: 0.2 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 2, transition: 'flipCard', effect: 'dolly-in', holdPoint: 'center',
+        motionIntensity: 0.7, transitionDuration: 0.25, speedPreset: 'ramp-pulse',
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'neon-night' } },
+          { effect: 'bloom', intensity: 0.35 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 2, transition: 'whipBlur', effect: 'speed-ramp', holdPoint: 'face',
+        motionIntensity: 0.8, transitionDuration: 0.2, speedPreset: 'ramp-dramatic',
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'neon-night' } },
+          { effect: 'motionBlur', intensity: 0.3 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 2.5, transition: 'pixelateCrossfade', effect: 'pixelate-reveal', holdPoint: 'center',
+        motionIntensity: 0.8, transitionDuration: 0.3,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'neon-night' } },
+          { effect: 'chromaticAberration', intensity: 0.4 },
+          { effect: 'bloom', intensity: 0.3 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 2, transition: 'flashBlack', effect: 'pulse-zoom', holdPoint: 'rule-of-thirds',
+        motionIntensity: 0.9, transitionDuration: 0.15,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'neon-night' } },
+          { effect: 'bloom', intensity: 0.4 },
+        ],
+      },
+      {
+        slotType: 'any', duration: 2.5, transition: 'fade', effect: 'dolly-out', holdPoint: 'center',
+        motionIntensity: 0.5, transitionDuration: 0.5,
+        postEffects: [
+          { effect: 'colorGrade', intensity: 0.7, params: { preset: 'neon-night' } },
+          { effect: 'bloom', intensity: 0.3 },
+          { effect: 'vignette', intensity: 0.5 },
+          { effect: 'chromaticAberration', intensity: 0.2 },
+        ],
+        textOverlay: { text: 'fade to black', position: 'bottom', fontSize: 'md', fontWeight: 'normal', animation: 'typewriter', color: '#D8B4FE' },
+      },
     ],
   },
 ];
