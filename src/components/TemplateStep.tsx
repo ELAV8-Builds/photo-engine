@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { SMART_TEMPLATES, assignMediaToSlots, formatDuration } from '@/lib/templates';
 import { getParticleCSS } from '@/lib/particles';
 import { MediaFile, SmartTemplate } from '@/types';
+import TemplateMixer, { type MixerOverrides } from '@/components/TemplateMixer';
 
 interface TemplateStepProps {
   selectedTemplate: string | null;
@@ -13,8 +14,10 @@ interface TemplateStepProps {
   onAspectChange: (a: '16:9' | '9:16' | '1:1') => void;
   onNext: () => void;
   onBack: () => void;
-  textOverrides: Record<number, string | null>; // slot index → custom text (null = removed)
+  textOverrides: Record<number, string | null>;
   onTextOverridesChange: (overrides: Record<number, string | null>) => void;
+  mixerOverrides: MixerOverrides;
+  onMixerOverridesChange: (overrides: MixerOverrides) => void;
 }
 
 const STYLE_ICONS: Record<string, string> = {
@@ -429,9 +432,13 @@ export default function TemplateStep({
   onBack,
   textOverrides,
   onTextOverridesChange,
+  mixerOverrides,
+  onMixerOverridesChange,
 }: TemplateStepProps) {
+  const [showMixer, setShowMixer] = useState(false);
   const selectedMedia = media.filter((m) => m.selected);
   const activeTemplate = SMART_TEMPLATES.find((t) => t.id === selectedTemplate) || null;
+  const hasOverrides = Object.values(mixerOverrides).some(v => v !== undefined && v !== null && (Array.isArray(v) ? v.length > 0 : true));
 
   return (
     <div className="space-y-6 step-content">
@@ -583,6 +590,51 @@ export default function TemplateStep({
           textOverrides={textOverrides}
           onTextOverridesChange={onTextOverridesChange}
         />
+      )}
+
+      {/* Template Mixer — customize effects */}
+      {activeTemplate && (
+        <div>
+          {!showMixer ? (
+            <button
+              onClick={() => setShowMixer(true)}
+              className={`w-full card-glow p-4 text-left flex items-center justify-between group hover:border-accent-gold/30 transition-colors ${
+                hasOverrides ? 'border-accent-gold/20' : ''
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-accent-gold/10 flex items-center justify-center">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="text-accent-gold" strokeWidth="2">
+                    <line x1="4" y1="21" x2="4" y2="14" />
+                    <line x1="4" y1="10" x2="4" y2="3" />
+                    <line x1="12" y1="21" x2="12" y2="12" />
+                    <line x1="12" y1="8" x2="12" y2="3" />
+                    <line x1="20" y1="21" x2="20" y2="16" />
+                    <line x1="20" y1="12" x2="20" y2="3" />
+                    <line x1="1" y1="14" x2="7" y2="14" />
+                    <line x1="9" y1="8" x2="15" y2="8" />
+                    <line x1="17" y1="16" x2="23" y2="16" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-white">Customize Effects</p>
+                  <p className="text-xs text-text-muted">
+                    {hasOverrides ? 'Custom effects applied — tap to edit' : 'Mix motions, transitions, color grades & more'}
+                  </p>
+                </div>
+              </div>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="text-text-muted group-hover:text-white transition-colors" strokeWidth="2">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </button>
+          ) : (
+            <TemplateMixer
+              overrides={mixerOverrides}
+              onOverridesChange={onMixerOverridesChange}
+              onClose={() => setShowMixer(false)}
+            />
+          )}
+        </div>
       )}
 
       {/* Aspect Ratio */}

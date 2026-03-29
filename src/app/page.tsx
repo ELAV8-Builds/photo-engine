@@ -10,6 +10,7 @@ import RenderStep from '@/components/RenderStep';
 import { MediaFile, MusicTrack, Step } from '@/types';
 import { loadProject, saveProject, updateProject } from '@/lib/project-manager';
 import { SMART_TEMPLATES } from '@/lib/templates';
+import type { MixerOverrides } from '@/components/TemplateMixer';
 
 function HomeContent() {
   const searchParams = useSearchParams();
@@ -23,6 +24,7 @@ function HomeContent() {
   const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16' | '1:1'>('16:9');
   const [outputQuality, setOutputQuality] = useState<'720p' | '1080p' | '4k'>('1080p');
   const [textOverrides, setTextOverrides] = useState<Record<number, string | null>>({});
+  const [mixerOverrides, setMixerOverrides] = useState<MixerOverrides>({});
 
   // Project state
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
@@ -153,12 +155,14 @@ function HomeContent() {
         {step === 'template' && (
           <TemplateStep
             selectedTemplate={selectedTemplate}
-            onSelectTemplate={(id) => { setSelectedTemplate(id); setTextOverrides({}); }}
+            onSelectTemplate={(id) => { setSelectedTemplate(id); setTextOverrides({}); setMixerOverrides({}); }}
             media={media}
             aspectRatio={aspectRatio}
             onAspectChange={setAspectRatio}
             textOverrides={textOverrides}
             onTextOverridesChange={setTextOverrides}
+            mixerOverrides={mixerOverrides}
+            onMixerOverridesChange={setMixerOverrides}
             onNext={() => setStep('music')}
             onBack={() => setStep('media')}
           />
@@ -186,6 +190,7 @@ function HomeContent() {
             outputQuality={outputQuality}
             onQualityChange={setOutputQuality}
             textOverrides={textOverrides}
+            mixerOverrides={mixerOverrides}
             onBack={() => setStep('music')}
           />
         )}

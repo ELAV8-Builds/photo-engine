@@ -5,6 +5,8 @@ import { MediaFile, MusicTrack, RenderProgress, SmartTemplate, TemplateSlot, Tem
 import { SMART_TEMPLATES, assignMediaToSlots, formatDuration } from '@/lib/templates';
 import { createParticles, updateParticles, drawParticles, drawVignette, drawTintOverlay, getParticleCSS, Particle } from '@/lib/particles';
 import { drawTextOverlay } from '@/lib/text-renderer';
+import { EffectsEngine, templateSlotToEngineSlot, type SlotConfig } from '@/lib/effects-engine';
+import type { MixerOverrides } from '@/components/TemplateMixer';
 
 interface RenderStepProps {
   photos: MediaFile[];
@@ -17,7 +19,8 @@ interface RenderStepProps {
   outputQuality: '720p' | '1080p' | '4k';
   onQualityChange: (q: '720p' | '1080p' | '4k') => void;
   onBack: () => void;
-  textOverrides?: Record<number, string | null>; // slot index → custom text (null = removed)
+  textOverrides?: Record<number, string | null>;
+  mixerOverrides?: MixerOverrides;
 }
 
 export default function RenderStep(props: RenderStepProps) {
@@ -33,6 +36,7 @@ export default function RenderStep(props: RenderStepProps) {
     onBack,
   } = props;
   const textOverrides = props.textOverrides ?? {};
+  const mixerOverrides = props.mixerOverrides ?? {};
   const [progress, setProgress] = useState<RenderProgress>({
     status: 'idle',
     percent: 0,
@@ -44,6 +48,10 @@ export default function RenderStep(props: RenderStepProps) {
   const [previewFade, setPreviewFade] = useState(true);
   const previewFadeTimer = useRef<ReturnType<typeof setTimeout>>();
   const previewAdvanceTimer = useRef<ReturnType<typeof setTimeout>>();
+  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
+  const previewEngineRef = useRef<EffectsEngine | null>(null);
+  const previewAnimRef = useRef<number>(0);
+  const previewImagesRef = useRef<Map<string, HTMLImageElement>>(new Map());
 
   const selectedMedia = useMemo(() => photos.filter(p => p.selected), [photos]);
   const template = SMART_TEMPLATES.find(t => t.id === selectedTemplate) || null;
@@ -61,41 +69,142 @@ export default function RenderStep(props: RenderStepProps) {
   }, [selectedMedia]);
 
   // ------------------------------------------------------------------
-  //  Preview: cycle through slots at per-slot timing
+  //  Animated Canvas Preview using v4 EffectsEngine
   // ------------------------------------------------------------------
   useEffect(() => {
     if (!template || selectedMedia.length === 0) return;
 
-    const slot = template.slots[previewSlotIndex];
-    if (!slot) return;
+    const canvas = previewCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
 
-    // Use the slot's own duration, clamped to at least 600ms for UX
-    const durationMs = Math.max(slot.duration * 1000, 600);
+    // Resize canvas to match its display size
+    const rect = canvas.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = Math.round(rect.width * dpr);
+    const h = Math.round(rect.height * dpr);
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+    }
 
-    // Start fade-out 300ms before switching
-    previewFadeTimer.current = setTimeout(() => setPreviewFade(false), durationMs - 300);
-    previewAdvanceTimer.current = setTimeout(() => {
-      setPreviewSlotIndex(prev => (prev + 1) % template.slots.length);
-      setPreviewFade(true);
-    }, durationMs);
+    // Create or resize engine
+    if (!previewEngineRef.current || previewEngineRef.current['width'] !== w) {
+      previewEngineRef.current = new EffectsEngine(w, h);
+    }
+    const engine = previewEngineRef.current;
+
+    // Build slot configs (with mixer overrides applied)
+    const slotConfigs: SlotConfig[] = template.slots.map((slot, i) => {
+      const mixed = applyMixerOverrides(slot, mixerOverrides);
+      const mid = slotAssignments[i] || '';
+      const media = mediaById.get(mid);
+      const { fx, fy } = media
+        ? getFocusPoint(media, slot.holdPoint)
+        : { fx: 0.5, fy: 0.5 };
+      return templateSlotToEngineSlot(mixed, fx, fy);
+    });
+
+    // Load images for all slots
+    const imageMap = new Map<number, CanvasImageSource>();
+    let imagesLoaded = 0;
+    const totalImages = template.slots.length;
+
+    const tryStartAnimation = () => {
+      if (imagesLoaded < Math.min(totalImages, 1)) return; // Wait for at least first image
+
+      const totalDuration = template.totalDuration;
+      let startTime = performance.now();
+      let running = true;
+
+      const animate = (now: number) => {
+        if (!running) return;
+        const elapsed = (now - startTime) / 1000;
+        const globalTime = elapsed % totalDuration; // Loop
+
+        const frame = engine.calculateFrame(globalTime, slotConfigs);
+
+        // Update slot index for UI indicators
+        if (frame.slotIndex !== previewSlotIndex) {
+          setPreviewSlotIndex(frame.slotIndex);
+        }
+
+        // Render using the engine
+        if (imageMap.has(frame.slotIndex) || (frame.inTransition && imageMap.has(frame.transitionDstSlot))) {
+          engine.renderFrame(ctx, frame, slotConfigs, imageMap);
+
+          // Draw theme overlays on top
+          if (template.theme.tintOverlay) {
+            drawTintOverlay(ctx, w, h, template.theme.tintOverlay);
+          }
+          if (template.theme.vignette > 0) {
+            drawVignette(ctx, w, h, template.theme.vignette);
+          }
+        }
+
+        previewAnimRef.current = requestAnimationFrame(animate);
+      };
+
+      previewAnimRef.current = requestAnimationFrame(animate);
+
+      return () => {
+        running = false;
+        cancelAnimationFrame(previewAnimRef.current);
+      };
+    };
+
+    let cleanupAnim: (() => void) | undefined;
+
+    // Load images
+    template.slots.forEach((_, i) => {
+      const mid = slotAssignments[i] || '';
+      const media = mediaById.get(mid);
+      if (!media) {
+        imagesLoaded++;
+        return;
+      }
+
+      const cached = previewImagesRef.current.get(media.url);
+      if (cached && cached.complete) {
+        imageMap.set(i, cached);
+        imagesLoaded++;
+        if (imagesLoaded >= 1 && !cleanupAnim) {
+          cleanupAnim = tryStartAnimation();
+        }
+        return;
+      }
+
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        previewImagesRef.current.set(media.url, img);
+        imageMap.set(i, img);
+        imagesLoaded++;
+        if (imagesLoaded >= 1 && !cleanupAnim) {
+          cleanupAnim = tryStartAnimation();
+        }
+      };
+      img.onerror = () => {
+        imagesLoaded++;
+        if (imagesLoaded >= 1 && !cleanupAnim) {
+          cleanupAnim = tryStartAnimation();
+        }
+      };
+      img.src = media.type === 'video'
+        ? (media.thumbnailUrl || media.url)
+        : media.url;
+    });
 
     return () => {
-      clearTimeout(previewFadeTimer.current);
-      clearTimeout(previewAdvanceTimer.current);
+      if (cleanupAnim) cleanupAnim();
+      cancelAnimationFrame(previewAnimRef.current);
     };
-  }, [previewSlotIndex, template, selectedMedia.length]);
-
-  // ------------------------------------------------------------------
-  //  Resolve current preview image / thumbnail
-  // ------------------------------------------------------------------
-  const currentMedia = mediaById.get(slotAssignments[previewSlotIndex] || '');
-  const previewSrc = currentMedia
-    ? currentMedia.type === 'video'
-      ? currentMedia.thumbnailUrl || currentMedia.url
-      : currentMedia.url
-    : null;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [template?.id, selectedMedia.length, slotAssignments.join(','), JSON.stringify(mixerOverrides)]);
 
   const currentSlot = template?.slots[previewSlotIndex] ?? null;
+  const currentMedia = mediaById.get(slotAssignments[previewSlotIndex] || '');
 
   // ------------------------------------------------------------------
   //  Server-side render (POST to /api/render)
@@ -201,6 +310,9 @@ export default function RenderStep(props: RenderStepProps) {
       canvas.width = dims.width;
       canvas.height = dims.height;
 
+      // Create the v4 effects engine for this render
+      const engine = new EffectsEngine(dims.width, dims.height);
+
       const stream = canvas.captureStream(30);
 
       // Add audio track if available
@@ -231,9 +343,9 @@ export default function RenderStep(props: RenderStepProps) {
       recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
       recorder.start();
 
-      // Render each slot with its assigned media
+      // Render each slot with its assigned media (mixer overrides applied)
       for (let i = 0; i < template.slots.length; i++) {
-        const slot = template.slots[i];
+        const slot = applyMixerOverrides(template.slots[i], mixerOverrides);
         const assignedMediaId = slotAssignments[i] || '';
         const assignedMedia = mediaById.get(assignedMediaId);
 
@@ -254,6 +366,7 @@ export default function RenderStep(props: RenderStepProps) {
             template.theme,
             textOverrides,
             i,
+            engine,
           );
         } else {
           // Empty slot — hold black for slot duration
@@ -264,6 +377,7 @@ export default function RenderStep(props: RenderStepProps) {
 
         // Render inter-slot transition if not the last slot
         if (i < template.slots.length - 1) {
+          const nextSlot = applyMixerOverrides(template.slots[i + 1], mixerOverrides);
           const nextMediaId = slotAssignments[i + 1] || '';
           const nextMedia = mediaById.get(nextMediaId);
           if (assignedMedia && nextMedia) {
@@ -273,7 +387,9 @@ export default function RenderStep(props: RenderStepProps) {
               nextMedia,
               canvas.width,
               canvas.height,
-              template.slots[i + 1].transition,
+              slot,
+              nextSlot,
+              engine,
             );
           }
         }
@@ -308,14 +424,9 @@ export default function RenderStep(props: RenderStepProps) {
         error: e instanceof Error ? e.message : 'Client-side render failed',
       });
     }
-  }, [template, slotAssignments, selectedMedia, mediaById, aspectRatio, outputQuality, music, textOverrides]);
+  }, [template, slotAssignments, selectedMedia, mediaById, aspectRatio, outputQuality, music, textOverrides, mixerOverrides]);
 
   const isRendering = progress.status === 'rendering' || progress.status === 'encoding' || progress.status === 'preparing';
-
-  // ------------------------------------------------------------------
-  //  Compute preview style filter for template style overlays
-  // ------------------------------------------------------------------
-  const previewFilter = template?.theme.mediaFilter || undefined;
 
   return (
     <div className="space-y-6">
@@ -330,15 +441,11 @@ export default function RenderStep(props: RenderStepProps) {
           className="relative bg-black"
           style={{ aspectRatio: aspectRatio.replace(':', '/') }}
         >
-          {previewSrc ? (
-            <img
-              src={previewSrc}
-              alt={`Preview slot ${previewSlotIndex + 1}`}
-              className="absolute inset-0 w-full h-full object-cover transition-opacity duration-300"
-              style={{
-                opacity: previewFade ? 1 : 0,
-                filter: previewFilter,
-              }}
+          {selectedMedia.length > 0 && template ? (
+            <canvas
+              ref={previewCanvasRef}
+              className="absolute inset-0 w-full h-full"
+              style={{ imageRendering: 'auto' }}
             />
           ) : (
             <div className="absolute inset-0 flex items-center justify-center">
@@ -623,6 +730,57 @@ export default function RenderStep(props: RenderStepProps) {
 //  Utility: resolution from aspect ratio + quality
 // ====================================================================
 
+// ====================================================================
+//  Apply mixer overrides to a template slot
+// ====================================================================
+
+function applyMixerOverrides(slot: TemplateSlot, overrides: MixerOverrides): TemplateSlot {
+  const modified = { ...slot };
+
+  if (overrides.motion) {
+    modified.effect = overrides.motion;
+  }
+  if (overrides.transition) {
+    modified.transition = overrides.transition;
+  }
+  if (overrides.motionIntensity !== undefined) {
+    modified.motionIntensity = overrides.motionIntensity;
+  }
+  if (overrides.speedPreset) {
+    modified.speedPreset = overrides.speedPreset;
+  }
+  if (overrides.colorGrade || overrides.postEffects) {
+    const existingEffects = [...(modified.postEffects || [])];
+
+    // Replace/add color grade
+    if (overrides.colorGrade) {
+      const idx = existingEffects.findIndex(e => e.effect === 'colorGrade');
+      const gradeEffect = { effect: 'colorGrade', intensity: 0.7, params: { preset: overrides.colorGrade } };
+      if (idx >= 0) {
+        existingEffects[idx] = gradeEffect;
+      } else {
+        existingEffects.unshift(gradeEffect);
+      }
+    }
+
+    // Add mixer post-effects
+    if (overrides.postEffects) {
+      for (const fx of overrides.postEffects) {
+        const idx = existingEffects.findIndex(e => e.effect === fx.effect);
+        if (idx >= 0) {
+          existingEffects[idx] = fx;
+        } else {
+          existingEffects.push(fx);
+        }
+      }
+    }
+
+    modified.postEffects = existingEffects;
+  }
+
+  return modified;
+}
+
 function getResolution(aspect: string, quality: string): { width: number; height: number } {
   const q = quality === '4k' ? 2160 : quality === '1080p' ? 1080 : 720;
   switch (aspect) {
@@ -703,7 +861,7 @@ function drawCover(
 }
 
 // ====================================================================
-//  renderSlotToCanvas — renders one slot's media with the slot's effect
+//  renderSlotToCanvas — renders one slot using the v4 EffectsEngine
 // ====================================================================
 
 async function renderSlotToCanvas(
@@ -715,11 +873,20 @@ async function renderSlotToCanvas(
   theme: TemplateTheme,
   textOverrides: Record<number, string | null>,
   slotIndex: number,
+  engine: EffectsEngine,
 ): Promise<void> {
   const img = await loadMediaImage(media);
   const fps = 30;
   const frames = Math.round(slot.duration * fps);
   const { fx, fy } = getFocusPoint(media, slot.holdPoint);
+
+  // Convert template slot to engine slot config
+  const slotConfig = templateSlotToEngineSlot(slot, fx, fy);
+
+  // Create slot array + image map for the engine
+  const slotConfigs: SlotConfig[] = [slotConfig];
+  const imageMap = new Map<number, CanvasImageSource>();
+  imageMap.set(0, img);
 
   // Initialize particles for this slot
   let particles: Particle[] = [];
@@ -729,79 +896,21 @@ async function renderSlotToCanvas(
   }
 
   for (let frame = 0; frame < frames; frame++) {
-    const t = frames > 1 ? frame / (frames - 1) : 0; // normalized 0..1
+    const t = frames > 1 ? frame / (frames - 1) : 0;
+    const globalTime = t * slotConfig.duration;
 
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, width, height);
-    ctx.save();
+    // Use the v4 engine for motion + post-processing
+    const engineFrame = engine.calculateFrame(globalTime, slotConfigs);
+    engine.renderFrame(ctx, engineFrame, slotConfigs, imageMap);
 
-    // ---- Apply slot effect transform ----
-    switch (slot.effect) {
-      case 'ken-burns': {
-        // Slow zoom centered on focus point (face or center)
-        const zoom = 1 + t * 0.15;
-        ctx.translate(width * 0.5, height * 0.5);
-        ctx.scale(zoom, zoom);
-        ctx.translate(-width * fx, -height * fy);
-        break;
-      }
+    // --- Theme overlays (on top of engine output) ---
 
-      case 'slow-zoom': {
-        // Gradual zoom from 1x to 1.15x centered
-        const zoom = 1 + t * 0.15;
-        ctx.translate(width * 0.5, height * 0.5);
-        ctx.scale(zoom, zoom);
-        ctx.translate(-width * 0.5, -height * 0.5);
-        break;
-      }
-
-      case 'parallax': {
-        // Horizontal pan offset simulating depth
-        const offset = (t - 0.5) * 40;
-        ctx.translate(offset, 0);
-        break;
-      }
-
-      case 'pan-left': {
-        // Translate image leftward over duration
-        const panDistance = width * 0.08;
-        ctx.translate(-panDistance * t, 0);
-        break;
-      }
-
-      case 'pan-right': {
-        // Translate image rightward over duration
-        const panDistance = width * 0.08;
-        ctx.translate(panDistance * t, 0);
-        break;
-      }
-
-      case 'bounce': {
-        // Slight bounce zoom using sine
-        const zoom = 1.05 + Math.sin(t * Math.PI) * 0.05;
-        ctx.translate(width * 0.5, height * 0.5);
-        ctx.scale(zoom, zoom);
-        ctx.translate(-width * 0.5, -height * 0.5);
-        break;
-      }
-
-      case 'static':
-      default:
-        // No transform
-        break;
-    }
-
-    drawCover(ctx, img, width, height);
-    ctx.restore();
-
-    // --- Theme overlays ---
-
-    // Tint overlay
+    // CSS filter overlay via tint
     if (theme.tintOverlay) {
       drawTintOverlay(ctx, width, height, theme.tintOverlay);
     }
 
-    // Vignette
+    // Theme-level vignette (engine may also add slot-level vignette)
     if (theme.vignette > 0) {
       drawVignette(ctx, width, height, theme.vignette);
     }
@@ -815,7 +924,6 @@ async function renderSlotToCanvas(
     // Text overlay
     if (slot.textOverlay && textOverrides[slotIndex] !== null) {
       const overlay = { ...slot.textOverlay };
-      // Apply user text override if present
       if (typeof textOverrides[slotIndex] === 'string') {
         overlay.text = textOverrides[slotIndex] as string;
       }
@@ -830,7 +938,7 @@ async function renderSlotToCanvas(
 }
 
 // ====================================================================
-//  renderTransition — draws a short transition between two slots
+//  renderTransition — draws transition between two slots using v4 engine
 // ====================================================================
 
 async function renderTransition(
@@ -839,127 +947,40 @@ async function renderTransition(
   toMedia: MediaFile,
   width: number,
   height: number,
-  transition: TemplateSlot['transition'],
+  fromSlot: TemplateSlot,
+  toSlot: TemplateSlot,
+  engine: EffectsEngine,
 ): Promise<void> {
-  if (transition === 'none') return;
+  if (toSlot.transition === 'none') return;
 
   const fromImg = await loadMediaImage(fromMedia);
   const toImg = await loadMediaImage(toMedia);
 
+  const { fx: fxFrom, fy: fyFrom } = getFocusPoint(fromMedia, fromSlot.holdPoint);
+  const { fx: fxTo, fy: fyTo } = getFocusPoint(toMedia, toSlot.holdPoint);
+
+  const fromConfig = templateSlotToEngineSlot(fromSlot, fxFrom, fyFrom);
+  const toConfig = templateSlotToEngineSlot(toSlot, fxTo, fyTo);
+
   const fps = 30;
-  const transitionDuration = 0.4; // seconds
-  const frames = Math.round(transitionDuration * fps);
+  const transDuration = toSlot.transitionDuration ?? 0.4;
+  const frames = Math.round(transDuration * fps);
+
+  // Build a two-slot config to let the engine handle the transition
+  const slotConfigs: SlotConfig[] = [fromConfig, toConfig];
+  const imageMap = new Map<number, CanvasImageSource>();
+  imageMap.set(0, fromImg);
+  imageMap.set(1, toImg);
 
   for (let frame = 0; frame < frames; frame++) {
     const t = frames > 1 ? frame / (frames - 1) : 1;
 
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, width, height);
+    // Position the global time within the transition zone (end of slot 0)
+    const transStart = fromConfig.duration - transDuration;
+    const globalTime = transStart + t * transDuration;
 
-    switch (transition) {
-      case 'fade': {
-        // Draw outgoing, then overlay incoming with increasing opacity
-        ctx.globalAlpha = 1 - t;
-        drawCover(ctx, fromImg, width, height);
-        ctx.globalAlpha = t;
-        drawCover(ctx, toImg, width, height);
-        ctx.globalAlpha = 1;
-        break;
-      }
-
-      case 'slide-left': {
-        // Outgoing slides left, incoming slides in from right
-        const offset = t * width;
-        ctx.save();
-        ctx.translate(-offset, 0);
-        drawCover(ctx, fromImg, width, height);
-        ctx.restore();
-        ctx.save();
-        ctx.translate(width - offset, 0);
-        drawCover(ctx, toImg, width, height);
-        ctx.restore();
-        break;
-      }
-
-      case 'slide-right': {
-        const offset = t * width;
-        ctx.save();
-        ctx.translate(offset, 0);
-        drawCover(ctx, fromImg, width, height);
-        ctx.restore();
-        ctx.save();
-        ctx.translate(-width + offset, 0);
-        drawCover(ctx, toImg, width, height);
-        ctx.restore();
-        break;
-      }
-
-      case 'zoom-in': {
-        // Outgoing zooms in and fades, incoming fades in
-        const zoom = 1 + t * 0.3;
-        ctx.save();
-        ctx.globalAlpha = 1 - t;
-        ctx.translate(width * 0.5, height * 0.5);
-        ctx.scale(zoom, zoom);
-        ctx.translate(-width * 0.5, -height * 0.5);
-        drawCover(ctx, fromImg, width, height);
-        ctx.restore();
-        ctx.save();
-        ctx.globalAlpha = t;
-        drawCover(ctx, toImg, width, height);
-        ctx.restore();
-        ctx.globalAlpha = 1;
-        break;
-      }
-
-      case 'zoom-out': {
-        // Outgoing shrinks, incoming fades in
-        const zoom = 1 - t * 0.2;
-        ctx.save();
-        ctx.globalAlpha = 1 - t;
-        ctx.translate(width * 0.5, height * 0.5);
-        ctx.scale(zoom, zoom);
-        ctx.translate(-width * 0.5, -height * 0.5);
-        drawCover(ctx, fromImg, width, height);
-        ctx.restore();
-        ctx.save();
-        ctx.globalAlpha = t;
-        drawCover(ctx, toImg, width, height);
-        ctx.restore();
-        ctx.globalAlpha = 1;
-        break;
-      }
-
-      case 'glitch': {
-        // Rapid flicker between from and to with RGB offset
-        const showTo = Math.random() < t;
-        if (showTo) {
-          drawCover(ctx, toImg, width, height);
-        } else {
-          drawCover(ctx, fromImg, width, height);
-        }
-        // RGB split effect during transition
-        if (Math.random() < 0.4) {
-          ctx.save();
-          ctx.globalCompositeOperation = 'screen';
-          ctx.globalAlpha = 0.15;
-          ctx.translate(Math.random() * 8 - 4, 0);
-          drawCover(ctx, showTo ? toImg : fromImg, width, height);
-          ctx.restore();
-        }
-        break;
-      }
-
-      default: {
-        // Fallback: simple crossfade
-        ctx.globalAlpha = 1 - t;
-        drawCover(ctx, fromImg, width, height);
-        ctx.globalAlpha = t;
-        drawCover(ctx, toImg, width, height);
-        ctx.globalAlpha = 1;
-        break;
-      }
-    }
+    const engineFrame = engine.calculateFrame(globalTime, slotConfigs);
+    engine.renderFrame(ctx, engineFrame, slotConfigs, imageMap);
 
     if (frame % 3 === 0) {
       await new Promise(r => requestAnimationFrame(r));
