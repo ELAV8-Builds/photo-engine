@@ -1,13 +1,15 @@
 'use client';
 
 import { useRef, useState, useEffect } from 'react';
-import { MusicTrack, PhotoFile } from '@/types';
+import { MusicTrack, MediaFile } from '@/types';
+import { SMART_TEMPLATES, formatDuration as fmtDuration } from '@/lib/templates';
 
 interface MusicStepProps {
   music: MusicTrack | null;
   onMusicChange: (music: MusicTrack | null) => void;
-  photos: PhotoFile[];
-  durationPerPhoto: number;
+  photos: MediaFile[];
+  durationPerPhoto?: number; // legacy — ignored if selectedTemplate is provided
+  selectedTemplate?: string | null;
   onNext: () => void;
   onBack: () => void;
 }
@@ -17,6 +19,7 @@ export default function MusicStep({
   onMusicChange,
   photos,
   durationPerPhoto,
+  selectedTemplate,
   onNext,
   onBack,
 }: MusicStepProps) {
@@ -27,8 +30,9 @@ export default function MusicStep({
   const [ytLoading, setYtLoading] = useState(false);
   const [ytError, setYtError] = useState('');
 
-  const selectedPhotos = photos.filter(p => p.selected);
-  const totalDuration = selectedPhotos.length * durationPerPhoto;
+  const selectedMedia = photos.filter(p => p.selected);
+  const template = selectedTemplate ? SMART_TEMPLATES.find(t => t.id === selectedTemplate) : null;
+  const totalDuration = template ? template.totalDuration : selectedMedia.length * (durationPerPhoto ?? 3.5);
 
   const handleFileUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -114,11 +118,13 @@ export default function MusicStep({
   }, [music]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 step-content">
       <div>
         <h2 className="text-lg font-bold text-white mb-1">Add Music</h2>
         <p className="text-sm text-text-muted">
-          Video length: <span className="text-accent-gold font-mono">{Math.round(totalDuration)}s</span> — Music is optional
+          Video length: <span className="text-accent-gold font-mono">{fmtDuration(totalDuration)}</span>
+          {template && <span className="text-text-muted"> ({template.name})</span>}
+          {' '}&mdash; Music is optional
         </p>
       </div>
 
@@ -168,6 +174,56 @@ export default function MusicStep({
           </div>
 
           {music.url && <audio ref={audioRef} src={music.url} preload="metadata" />}
+
+          {/* Duration comparison */}
+          {music.duration > 0 && (
+            <div className="mt-3 pt-3 border-t border-border-subtle">
+              <div className="flex items-center justify-between text-xs text-text-muted mb-1.5">
+                <span>Music vs Video</span>
+                <span className="font-mono">
+                  {music.duration > totalDuration
+                    ? `Music ${fmtDuration(music.duration - totalDuration)} longer — will be trimmed`
+                    : music.duration < totalDuration
+                    ? `Music ${fmtDuration(totalDuration - music.duration)} shorter — will loop`
+                    : 'Perfect match!'}
+                </span>
+              </div>
+              <div className="flex gap-1 items-center">
+                <div className="flex-1 h-2 rounded bg-bg-input overflow-hidden">
+                  <div
+                    className="h-full rounded"
+                    style={{
+                      width: `${Math.min(100, (totalDuration / Math.max(music.duration, totalDuration)) * 100)}%`,
+                      background: 'linear-gradient(90deg, #FFD700, #FFBF00)',
+                    }}
+                  />
+                </div>
+                <span className="text-[10px] font-mono text-accent-gold w-10 text-right">{fmtDuration(totalDuration)}</span>
+              </div>
+              <div className="flex gap-1 items-center mt-1">
+                <div className="flex-1 h-2 rounded bg-bg-input overflow-hidden">
+                  <div
+                    className="h-full rounded"
+                    style={{
+                      width: `${Math.min(100, (music.duration / Math.max(music.duration, totalDuration)) * 100)}%`,
+                      background: 'linear-gradient(90deg, #60A5FA, #3B82F6)',
+                    }}
+                  />
+                </div>
+                <span className="text-[10px] font-mono text-blue-400 w-10 text-right">{fmtDuration(music.duration)}</span>
+              </div>
+              <div className="flex items-center gap-3 mt-1.5 text-[10px] text-text-muted">
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-sm" style={{ background: '#FFD700' }} />
+                  Video
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-sm" style={{ background: '#60A5FA' }} />
+                  Music
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

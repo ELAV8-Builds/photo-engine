@@ -60,7 +60,7 @@ export default function Home() {
             music={music}
             onMusicChange={setMusic}
             photos={media}
-            durationPerPhoto={3.5}
+            selectedTemplate={selectedTemplate}
             onNext={() => setStep('render')}
             onBack={() => setStep('template')}
           />

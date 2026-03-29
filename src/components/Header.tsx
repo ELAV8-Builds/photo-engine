@@ -24,9 +24,7 @@ export default function Header({ currentStep, onStepClick, canNavigate }: Header
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-accent-gold to-accent-amber flex items-center justify-center">
-              <span className="text-bg-main font-black text-sm">PF</span>
-            </div>
+            <img src="/icons/logo.svg" alt="" className="w-8 h-8" aria-hidden="true" />
             <div>
               <h1 className="text-sm font-bold text-white tracking-wide">
                 PHOTO<span className="text-accent-gold">FORGE</span>

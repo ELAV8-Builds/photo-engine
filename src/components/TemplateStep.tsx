@@ -14,6 +14,15 @@ interface TemplateStepProps {
   onBack: () => void;
 }
 
+const STYLE_ICONS: Record<string, string> = {
+  cinematic: '/icons/cinematic.svg',
+  dynamic: '/icons/dynamic.svg',
+  minimal: '/icons/minimal.svg',
+  retro: '/icons/retro.svg',
+  glitch: '/icons/glitch.svg',
+  parallax: '/icons/parallax.svg',
+};
+
 const ASPECT_OPTIONS: { value: '16:9' | '9:16' | '1:1'; label: string; icon: string }[] = [
   { value: '16:9', label: 'Landscape', icon: '\u25AC' },
   { value: '9:16', label: 'Portrait', icon: '\u25AE' },
@@ -111,8 +120,9 @@ function AnimatedPreview({
           }}
         />
       ) : (
-        <div className="flex-1 h-full bg-gradient-to-br from-bg-hover to-bg-card flex items-center justify-center">
-          <span className="text-text-muted text-xs">No media selected</span>
+        <div className="flex-1 h-full bg-gradient-to-br from-bg-hover to-bg-card flex flex-col items-center justify-center gap-2">
+          <img src={STYLE_ICONS[template.style] || STYLE_ICONS.cinematic} alt="" className="w-10 h-10 opacity-40" />
+          <span className="text-text-muted text-xs">Add media to preview</span>
         </div>
       )}
 
@@ -294,7 +304,7 @@ export default function TemplateStep({
   const activeTemplate = SMART_TEMPLATES.find((t) => t.id === selectedTemplate) || null;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 step-content">
       {/* Header */}
       <div>
         <h2 className="text-lg font-bold text-white mb-1">Choose a Template</h2>
@@ -366,11 +376,19 @@ export default function TemplateStep({
 
               {/* Template info */}
               <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <h3 className="font-bold text-white text-sm">{template.name}</h3>
-                  <p className="text-xs text-text-muted mt-0.5 line-clamp-2">
-                    {template.description}
-                  </p>
+                <div className="flex items-start gap-2.5 min-w-0">
+                  <img
+                    src={STYLE_ICONS[template.style] || STYLE_ICONS.cinematic}
+                    alt=""
+                    className="w-7 h-7 mt-0.5 shrink-0 opacity-70"
+                    aria-hidden="true"
+                  />
+                  <div className="min-w-0">
+                    <h3 className="font-bold text-white text-sm">{template.name}</h3>
+                    <p className="text-xs text-text-muted mt-0.5 line-clamp-2">
+                      {template.description}
+                    </p>
+                  </div>
                 </div>
                 <div className="text-right shrink-0">
                   <span className="text-[10px] font-mono text-accent-gold block">

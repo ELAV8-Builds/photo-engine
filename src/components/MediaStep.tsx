@@ -15,6 +15,7 @@ export default function MediaStep({ media, onMediaChange, onNext }: MediaStepPro
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [processing, setProcessing] = useState(false);
   const [processingMessage, setProcessingMessage] = useState('');
+  const [processingPercent, setProcessingPercent] = useState(0);
   const [dragOver, setDragOver] = useState(false);
 
   const processFiles = useCallback(async (files: FileList | File[]) => {
@@ -22,11 +23,13 @@ export default function MediaStep({ media, onMediaChange, onNext }: MediaStepPro
     if (mediaFiles.length === 0) return;
 
     setProcessing(true);
+    setProcessingPercent(0);
 
     const newMedia: MediaFile[] = [];
     const existingCount = media.length;
 
     for (let i = 0; i < mediaFiles.length; i++) {
+      setProcessingPercent(Math.round(((i) / mediaFiles.length) * 100));
       const file = mediaFiles[i];
 
       if (isVideoFile(file)) {
@@ -112,8 +115,10 @@ export default function MediaStep({ media, onMediaChange, onNext }: MediaStepPro
     }
 
     onMediaChange([...media, ...newMedia]);
+    setProcessingPercent(100);
     setProcessing(false);
     setProcessingMessage('');
+    setProcessingPercent(0);
   }, [media, onMediaChange]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -154,7 +159,7 @@ export default function MediaStep({ media, onMediaChange, onNext }: MediaStepPro
   const videoCount = media.filter(m => m.type === 'video').length;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 step-content">
       {/* Upload Area */}
       <div
         onDrop={handleDrop}
@@ -162,8 +167,9 @@ export default function MediaStep({ media, onMediaChange, onNext }: MediaStepPro
         onDragLeave={() => setDragOver(false)}
         onClick={() => fileInputRef.current?.click()}
         className={`card-glow p-8 sm:p-12 text-center cursor-pointer transition-all ${
-          dragOver ? 'border-accent-gold shadow-gold-lg bg-accent-glow' : ''
+          dragOver ? 'border-accent-gold shadow-gold-lg bg-accent-glow' : 'hover:shadow-gold-sm'
         }`}
+        style={dragOver ? { animation: 'dragPulse 1s ease-in-out infinite' } : undefined}
         role="button"
         aria-label="Upload photos and videos"
         tabIndex={0}
@@ -196,8 +202,11 @@ export default function MediaStep({ media, onMediaChange, onNext }: MediaStepPro
             </p>
           </div>
           {processing && (
-            <div className="w-48 progress-bar">
-              <div className="progress-bar-fill" style={{ width: '60%' }} />
+            <div className="w-48">
+              <div className="progress-bar">
+                <div className="progress-bar-fill" style={{ width: `${Math.max(processingPercent, 5)}%` }} />
+              </div>
+              <p className="text-xs text-text-muted font-mono mt-1">{processingPercent}%</p>
             </div>
           )}
         </div>

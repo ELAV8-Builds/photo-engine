@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFD700"/>
+      <stop offset="100%" stop-color="#FFBF00"/>
+    </linearGradient>
+    <linearGradient id="darkGold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFD700" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#FFD700" stop-opacity="0.05"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="#0a0a0f"/>
+  <!-- Hex grid pattern -->
+  <g opacity="0.06" stroke="#FFD700" fill="none" stroke-width="0.5">
+    <path d="M128 64 L192 96 L192 160 L128 192 L64 160 L64 96Z"/>
+    <path d="M256 64 L320 96 L320 160 L256 192 L192 160 L192 96Z"/>
+    <path d="M384 64 L448 96 L448 160 L384 192 L320 160 L320 96Z"/>
+    <path d="M128 192 L192 224 L192 288 L128 320 L64 288 L64 224Z"/>
+    <path d="M256 192 L320 224 L320 288 L256 320 L192 288 L192 224Z"/>
+    <path d="M384 192 L448 224 L448 288 L384 320 L320 288 L320 224Z"/>
+    <path d="M128 320 L192 352 L192 416 L128 448 L64 416 L64 352Z"/>
+    <path d="M256 320 L320 352 L320 416 L256 448 L192 416 L192 352Z"/>
+    <path d="M384 320 L448 352 L448 416 L384 448 L320 416 L320 352Z"/>
+  </g>
+  <!-- Camera frame outer -->
+  <rect x="120" y="140" width="272" height="232" rx="24" fill="none" stroke="url(#goldGrad)" stroke-width="3" filter="url(#glow)"/>
+  <!-- Lens circle -->
+  <circle cx="256" cy="256" r="72" fill="none" stroke="url(#goldGrad)" stroke-width="2.5" filter="url(#glow)"/>
+  <circle cx="256" cy="256" r="52" fill="none" stroke="#FFD700" stroke-width="1" opacity="0.4"/>
+  <circle cx="256" cy="256" r="32" fill="url(#darkGold)"/>
+  <!-- Lens shine -->
+  <circle cx="240" cy="240" r="8" fill="#FFD700" opacity="0.6"/>
+  <!-- Lightning bolt -->
+  <path d="M248 208 L264 248 L252 248 L268 296 L244 256 L256 256Z" fill="url(#goldGrad)" filter="url(#glow)"/>
+  <!-- Top flash bar -->
+  <rect x="196" y="148" width="56" height="16" rx="4" fill="url(#goldGrad)" opacity="0.8"/>
+  <!-- Corner brackets -->
+  <path d="M136 164 L136 152 L148 152" fill="none" stroke="#FFD700" stroke-width="2" opacity="0.5"/>
+  <path d="M376 164 L376 152 L364 152" fill="none" stroke="#FFD700" stroke-width="2" opacity="0.5"/>
+  <path d="M136 348 L136 360 L148 360" fill="none" stroke="#FFD700" stroke-width="2" opacity="0.5"/>
+  <path d="M376 348 L376 360 L364 360" fill="none" stroke="#FFD700" stroke-width="2" opacity="0.5"/>
+  <!-- Film strip dots -->
+  <g fill="#FFD700" opacity="0.3">
+    <rect x="100" y="160" width="8" height="8" rx="1"/>
+    <rect x="100" y="184" width="8" height="8" rx="1"/>
+    <rect x="100" y="208" width="8" height="8" rx="1"/>
+    <rect x="100" y="232" width="8" height="8" rx="1"/>
+    <rect x="100" y="256" width="8" height="8" rx="1"/>
+    <rect x="100" y="280" width="8" height="8" rx="1"/>
+    <rect x="100" y="304" width="8" height="8" rx="1"/>
+    <rect x="100" y="328" width="8" height="8" rx="1"/>
+    <rect x="404" y="160" width="8" height="8" rx="1"/>
+    <rect x="404" y="184" width="8" height="8" rx="1"/>
+    <rect x="404" y="208" width="8" height="8" rx="1"/>
+    <rect x="404" y="232" width="8" height="8" rx="1"/>
+    <rect x="404" y="256" width="8" height="8" rx="1"/>
+    <rect x="404" y="280" width="8" height="8" rx="1"/>
+    <rect x="404" y="304" width="8" height="8" rx="1"/>
+    <rect x="404" y="328" width="8" height="8" rx="1"/>
+  </g>
+</svg>
