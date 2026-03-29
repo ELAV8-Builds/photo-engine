@@ -89,6 +89,14 @@ export interface TextOverlay {
   glowColor?: string;
 }
 
+/**
+ * Override for a text overlay on a specific slot.
+ * - `null` = remove the overlay
+ * - `string` = legacy: override text only (backward compat)
+ * - `Partial<TextOverlay>` = override specific properties (text, fontSize, position, etc.)
+ */
+export type TextOverlayOverride = null | string | Partial<TextOverlay>;
+
 /** Particle/effect system for template themes */
 export type ParticleType = 'confetti' | 'snow' | 'sparks' | 'hearts' | 'stars' | 'bubbles' | 'none';
 

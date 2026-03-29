@@ -6,7 +6,7 @@
  * OffscreenCanvas or regular Canvas 2D context.
  */
 
-import type { TextOverlay } from '@/types';
+import type { TextOverlay, TextOverlayOverride } from '@/types';
 import type { CSSProperties } from 'react';
 
 // ---------------------------------------------------------------------------
@@ -546,4 +546,34 @@ export function getTextPreviewCSS(overlay: TextOverlay): { style: CSSProperties 
   };
 
   return { style };
+}
+
+// ---------------------------------------------------------------------------
+// 5. resolveTextOverlay — apply overrides to a base overlay
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve a text overlay with user overrides applied.
+ *
+ * @param base      - The original TextOverlay from the template slot
+ * @param override  - The user's override (null = removed, string = text only, object = partial override)
+ * @returns The resolved TextOverlay, or null if the overlay should be hidden
+ */
+export function resolveTextOverlay(
+  base: TextOverlay,
+  override: TextOverlayOverride | undefined,
+): TextOverlay | null {
+  // No override — use original
+  if (override === undefined) return base;
+
+  // Null = removed
+  if (override === null) return null;
+
+  // String = legacy text-only override
+  if (typeof override === 'string') {
+    return { ...base, text: override };
+  }
+
+  // Object = partial override — merge with base
+  return { ...base, ...override };
 }

@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { MediaFile } from '@/types';
 import { detectFaces } from '@/lib/face-detect';
+import { saveTrimMemory, loadTrimMemory } from '@/lib/trim-memory';
 import {
   isHeicFile,
   isDefinitelyHeic,
@@ -68,6 +69,9 @@ export default function MediaStep({ media, onMediaChange, onNext }: MediaStepPro
             }
           }
 
+          // Check for previously saved trim settings
+          const savedTrim = await loadTrimMemory(file.name, file.size);
+
           newMedia.push({
             id: `media-${Date.now()}-${i}`,
             file,
@@ -80,10 +84,14 @@ export default function MediaStep({ media, onMediaChange, onNext }: MediaStepPro
             order: existingCount + i,
             type: 'video',
             duration: videoInfo.duration,
+            trimStart: savedTrim?.trimStart,
+            trimEnd: savedTrim?.trimEnd,
             thumbnailUrl: videoInfo.thumbnailUrl,
           });
         } catch {
           // Fallback if video metadata extraction fails
+          const savedTrimFallback = await loadTrimMemory(file.name, file.size).catch(() => null);
+
           newMedia.push({
             id: `media-${Date.now()}-${i}`,
             file,
@@ -96,6 +104,8 @@ export default function MediaStep({ media, onMediaChange, onNext }: MediaStepPro
             order: existingCount + i,
             type: 'video',
             duration: 0,
+            trimStart: savedTrimFallback?.trimStart,
+            trimEnd: savedTrimFallback?.trimEnd,
             thumbnailUrl: undefined,
           });
         }
@@ -192,6 +202,11 @@ export default function MediaStep({ media, onMediaChange, onNext }: MediaStepPro
     onMediaChange(
       media.map(m => m.id === id ? { ...m, trimStart, trimEnd } : m),
     );
+    // Persist trim settings for future reuse
+    const target = media.find(m => m.id === id);
+    if (target?.file) {
+      saveTrimMemory(target.file.name, target.file.size, trimStart, trimEnd);
+    }
   };
 
   const selectAll = () => {
@@ -531,14 +546,36 @@ function VideoTrimmerInline({
     setIsExtracting(false);
   }, [duration, media.url, thumbnails.length, isExtracting]);
 
-  // Extract thumbnails on component render
-  useState(() => {
+  // Extract thumbnails on mount
+  useEffect(() => {
     extractThumbnails();
-  });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Seek video to the trim start position on mount and when start changes
+  useEffect(() => {
+    if (videoRef.current && !isPlaying) {
+      videoRef.current.currentTime = start;
+    }
+  }, [start, isPlaying]);
+
+  // Pause video on unmount
+  useEffect(() => {
+    return () => {
+      if (videoRef.current) {
+        videoRef.current.pause();
+      }
+    };
+  }, []);
 
   const handleMouseDown = (type: 'start' | 'end' | 'window', e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    // Pause playback when user starts dragging handles
+    if (isPlaying && videoRef.current) {
+      videoRef.current.pause();
+      setIsPlaying(false);
+    }
     setDragging(type);
     dragStartX.current = e.clientX;
     dragStartVal.current = start;
@@ -582,7 +619,16 @@ function VideoTrimmerInline({
 
   const playSegment = () => {
     if (!videoRef.current) return;
-    videoRef.current.currentTime = start;
+    if (isPlaying) {
+      // Pause
+      videoRef.current.pause();
+      setIsPlaying(false);
+      return;
+    }
+    // If the video is past the end or before start, seek to start
+    if (videoRef.current.currentTime >= end || videoRef.current.currentTime < start) {
+      videoRef.current.currentTime = start;
+    }
     videoRef.current.play();
     setIsPlaying(true);
   };
@@ -590,6 +636,7 @@ function VideoTrimmerInline({
   const handleTimeUpdate = () => {
     if (videoRef.current && videoRef.current.currentTime >= end) {
       videoRef.current.pause();
+      videoRef.current.currentTime = start;
       setIsPlaying(false);
     }
   };
@@ -694,10 +741,17 @@ function VideoTrimmerInline({
             onClick={playSegment}
             className="text-xs text-accent-gold hover:underline flex items-center gap-1"
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-              <polygon points="5,3 19,12 5,21" />
-            </svg>
-            {isPlaying ? 'Playing...' : 'Preview'}
+            {isPlaying ? (
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="5" y="3" width="5" height="18" />
+                <rect x="14" y="3" width="5" height="18" />
+              </svg>
+            ) : (
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                <polygon points="5,3 19,12 5,21" />
+              </svg>
+            )}
+            {isPlaying ? 'Pause' : 'Preview'}
           </button>
           <span className="text-xs text-text-muted font-mono">
             {formatDuration(start)} — {formatDuration(end)} ({formatDuration(selectedDuration)})

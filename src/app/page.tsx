@@ -7,7 +7,7 @@ import MediaStep from '@/components/MediaStep';
 import TemplateStep from '@/components/TemplateStep';
 import MusicStep from '@/components/MusicStep';
 import RenderStep from '@/components/RenderStep';
-import { MediaFile, MusicTrack, Step } from '@/types';
+import { MediaFile, MusicTrack, Step, TextOverlayOverride } from '@/types';
 import { loadProject, saveProject, updateProject } from '@/lib/project-manager';
 import { SMART_TEMPLATES, expandTemplateForMedia } from '@/lib/templates';
 import type { MixerOverrides } from '@/components/TemplateMixer';
@@ -24,7 +24,7 @@ function HomeContent() {
   const [title, setTitle] = useState('');
   const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16' | '1:1'>('16:9');
   const [outputQuality, setOutputQuality] = useState<'720p' | '1080p' | '4k'>('1080p');
-  const [textOverrides, setTextOverrides] = useState<Record<number, string | null>>({});
+  const [textOverrides, setTextOverrides] = useState<Record<number, TextOverlayOverride>>({});
   const [mixerOverrides, setMixerOverrides] = useState<MixerOverrides>({});
 
   // Project state

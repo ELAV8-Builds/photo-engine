@@ -6,7 +6,7 @@
  */
 
 import { v4 as uuid } from 'uuid';
-import { MediaFile, MusicTrack } from '@/types';
+import { MediaFile, MusicTrack, TextOverlayOverride } from '@/types';
 import { dbGetAll, dbGet, dbPut, dbDelete, dbSearch, dbCount, STORES, dbGetAllByIndex } from './db';
 
 // ---------------------------------------------------------------------------
@@ -27,7 +27,7 @@ export interface SavedProject {
   /** Title text */
   title: string;
   /** Text overlay overrides */
-  textOverrides: Record<number, string | null>;
+  textOverrides: Record<number, TextOverlayOverride>;
   /** Media files — stored as serializable data (blobs stored separately) */
   mediaItems: SavedMediaItem[];
   /** Music track metadata (blob stored in song library or inline) */
@@ -101,7 +101,7 @@ export async function saveProject(opts: {
   title: string;
   aspectRatio: '16:9' | '9:16' | '1:1';
   outputQuality: '720p' | '1080p' | '4k';
-  textOverrides: Record<number, string | null>;
+  textOverrides: Record<number, TextOverlayOverride>;
   totalDuration: number;
 }): Promise<string> {
   const id = uuid();
@@ -195,7 +195,7 @@ export async function updateProject(
     title?: string;
     aspectRatio?: '16:9' | '9:16' | '1:1';
     outputQuality?: '720p' | '1080p' | '4k';
-    textOverrides?: Record<number, string | null>;
+    textOverrides?: Record<number, TextOverlayOverride>;
     totalDuration?: number;
   },
 ): Promise<void> {
@@ -252,7 +252,7 @@ export async function loadProject(id: string): Promise<{
   title: string;
   aspectRatio: '16:9' | '9:16' | '1:1';
   outputQuality: '720p' | '1080p' | '4k';
-  textOverrides: Record<number, string | null>;
+  textOverrides: Record<number, TextOverlayOverride>;
 } | null> {
   const project = await dbGet<SavedProject>(STORES.projects, id);
   if (!project) return null;

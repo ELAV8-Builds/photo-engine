@@ -3,7 +3,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { SMART_TEMPLATES, assignMediaToSlots, formatDuration } from '@/lib/templates';
 import { getParticleCSS } from '@/lib/particles';
-import { MediaFile, SmartTemplate } from '@/types';
+import { MediaFile, SmartTemplate, TextOverlay, TextOverlayOverride } from '@/types';
+import { resolveTextOverlay } from '@/lib/text-renderer';
 import TemplateMixer, { type MixerOverrides } from '@/components/TemplateMixer';
 
 interface TemplateStepProps {
@@ -14,8 +15,8 @@ interface TemplateStepProps {
   onAspectChange: (a: '16:9' | '9:16' | '1:1') => void;
   onNext: () => void;
   onBack: () => void;
-  textOverrides: Record<number, string | null>;
-  onTextOverridesChange: (overrides: Record<number, string | null>) => void;
+  textOverrides: Record<number, TextOverlayOverride>;
+  onTextOverridesChange: (overrides: Record<number, TextOverlayOverride>) => void;
   mixerOverrides: MixerOverrides;
   onMixerOverridesChange: (overrides: MixerOverrides) => void;
 }
@@ -166,9 +167,11 @@ function AnimatedPreview({
 function TimelineVisualization({
   template,
   media,
+  textOverrides,
 }: {
   template: SmartTemplate;
   media: MediaFile[];
+  textOverrides: Record<number, TextOverlayOverride>;
 }) {
   const selectedMedia = media.filter((m) => m.selected);
   const mediaIds = selectedMedia.map((m) => m.id);
@@ -230,6 +233,17 @@ function TimelineVisualization({
                 }}
               />
 
+              {/* Text overlay indicator */}
+              {((slot.textOverlay && textOverrides[i] !== null) ||
+                (!slot.textOverlay && textOverrides[i] && typeof textOverrides[i] === 'object' && textOverrides[i] !== null)) && (
+                <div
+                  className="absolute top-1.5 right-0.5 z-10 w-3 h-3 rounded-sm bg-accent-gold/80 flex items-center justify-center"
+                  title="Has text overlay"
+                >
+                  <span className="text-[6px] font-black text-black leading-none">T</span>
+                </div>
+              )}
+
               {/* Slot info overlay */}
               <div className="relative z-10 text-center pb-1 px-0.5">
                 <span className="text-[9px] font-mono text-white/80 block leading-tight">
@@ -252,6 +266,14 @@ function TimelineVisualization({
                 {assignedMedia && (
                   <p className="text-[9px] text-accent-gold truncate max-w-[120px]">
                     {assignedMedia.name}
+                  </p>
+                )}
+                {slot.textOverlay && textOverrides[i] !== null && (
+                  <p className="text-[9px] text-accent-gold/80 truncate max-w-[120px]">
+                    T: &ldquo;{(() => {
+                      const resolved = resolveTextOverlay(slot.textOverlay!, textOverrides[i]);
+                      return resolved ? resolved.text : slot.textOverlay!.text;
+                    })()}&rdquo;
                   </p>
                 )}
               </div>
@@ -301,27 +323,175 @@ function TimelineVisualization({
 }
 
 /* ------------------------------------------------------------------ */
-/*  Text Overlay Editor                                                */
+/*  Constants for text overlay controls                                */
+/* ------------------------------------------------------------------ */
+
+const FONT_SIZE_OPTIONS: { value: TextOverlay['fontSize']; label: string; preview: string }[] = [
+  { value: 'sm', label: 'Small', preview: 'Aa' },
+  { value: 'md', label: 'Medium', preview: 'Aa' },
+  { value: 'lg', label: 'Large', preview: 'Aa' },
+  { value: 'xl', label: 'XL', preview: 'Aa' },
+];
+
+const ANIMATION_OPTIONS: { value: TextOverlay['animation']; label: string; icon: string }[] = [
+  { value: 'fade-in', label: 'Fade', icon: '◐' },
+  { value: 'slide-up', label: 'Slide Up', icon: '↑' },
+  { value: 'typewriter', label: 'Typewriter', icon: '⌨' },
+  { value: 'scale-pop', label: 'Pop', icon: '💥' },
+  { value: 'glitch-in', label: 'Glitch', icon: '⚡' },
+  { value: 'none', label: 'Static', icon: '—' },
+];
+
+const POSITION_OPTIONS: { value: TextOverlay['position']; label: string }[] = [
+  { value: 'top', label: 'Top' },
+  { value: 'center', label: 'Center' },
+  { value: 'bottom', label: 'Bottom' },
+];
+
+const WEIGHT_OPTIONS: { value: TextOverlay['fontWeight']; label: string }[] = [
+  { value: 'normal', label: 'Regular' },
+  { value: 'bold', label: 'Bold' },
+  { value: 'black', label: 'Black' },
+];
+
+const COLOR_PRESETS = [
+  '#ffffff', '#FFD700', '#FF6B00', '#FF3366',
+  '#00FFAA', '#00BFFF', '#A855F7', '#000000',
+];
+
+/* ------------------------------------------------------------------ */
+/*  Text Overlay Editor (Enhanced)                                     */
 /* ------------------------------------------------------------------ */
 function TextOverlayEditor({
   template,
+  media,
   textOverrides,
   onTextOverridesChange,
 }: {
   template: SmartTemplate;
-  textOverrides: Record<number, string | null>;
-  onTextOverridesChange: (overrides: Record<number, string | null>) => void;
+  media: MediaFile[];
+  textOverrides: Record<number, TextOverlayOverride>;
+  onTextOverridesChange: (overrides: Record<number, TextOverlayOverride>) => void;
 }) {
-  // Find all slots that have textOverlay
+  const [expandedSlot, setExpandedSlot] = useState<number | null>(null);
+  const [showAddPicker, setShowAddPicker] = useState(false);
+
+  // Find all slots that have textOverlay (either from template or user-added)
   const textSlots = template.slots
     .map((slot, i) => ({ slot, index: i }))
-    .filter(({ slot }) => slot.textOverlay);
+    .filter(({ slot, index }) => {
+      // Has original text overlay and not removed
+      if (slot.textOverlay && textOverrides[index] !== null) return true;
+      // User added a text overlay to this slot
+      if (!slot.textOverlay && textOverrides[index] && typeof textOverrides[index] === 'object' && textOverrides[index] !== null) return true;
+      return false;
+    });
 
-  if (textSlots.length === 0 && template.defaultTexts.length === 0) return null;
+  // Slots without text (for "Add Text" picker)
+  const emptySlots = template.slots
+    .map((_, i) => i)
+    .filter(i => {
+      const slot = template.slots[i];
+      if (slot.textOverlay && textOverrides[i] !== null) return false;
+      if (textOverrides[i] && typeof textOverrides[i] === 'object' && textOverrides[i] !== null) return false;
+      return true;
+    });
+
+  // Also include removed slots
+  const removedSlots = template.slots
+    .map((slot, i) => ({ slot, index: i }))
+    .filter(({ slot, index }) => slot.textOverlay && textOverrides[index] === null);
+
+  const selectedMedia = media.filter(m => m.selected);
+  const slotAssignments = assignMediaToSlots(template, selectedMedia.map(m => m.id));
+  const mediaById = new Map<string, MediaFile>();
+  selectedMedia.forEach(m => mediaById.set(m.id, m));
+
+  /** Get the resolved overlay for a slot index */
+  const getResolved = (index: number): TextOverlay | null => {
+    const base = template.slots[index]?.textOverlay;
+    const override = textOverrides[index];
+
+    // User-added text (no base, override is a full object)
+    if (!base && override && typeof override === 'object' && override !== null) {
+      const defaults: TextOverlay = {
+        text: 'Your Text', position: 'center', fontSize: 'lg',
+        fontWeight: 'bold', animation: 'fade-in', color: '#ffffff',
+      };
+      return { ...defaults, ...override } as TextOverlay;
+    }
+
+    if (!base) return null;
+    return resolveTextOverlay(base, override);
+  };
+
+  /** Update a specific property of a text overlay override */
+  const updateOverride = (index: number, patch: Partial<TextOverlay>) => {
+    const existing = textOverrides[index];
+    if (existing === null) return; // removed
+
+    if (existing === undefined || typeof existing === 'string') {
+      // Upgrade from legacy string to full object
+      const base = template.slots[index]?.textOverlay;
+      const textValue = typeof existing === 'string' ? existing : undefined;
+      onTextOverridesChange({
+        ...textOverrides,
+        [index]: { ...(textValue !== undefined ? { text: textValue } : {}), ...patch },
+      });
+    } else {
+      // Already an object — merge
+      onTextOverridesChange({
+        ...textOverrides,
+        [index]: { ...existing, ...patch },
+      });
+    }
+  };
+
+  /** Add a new text overlay to a slot */
+  const addTextToSlot = (index: number) => {
+    onTextOverridesChange({
+      ...textOverrides,
+      [index]: {
+        text: 'Your Text',
+        position: 'center' as const,
+        fontSize: 'lg' as const,
+        fontWeight: 'bold' as const,
+        animation: 'fade-in' as const,
+        color: '#ffffff',
+      },
+    });
+    setExpandedSlot(index);
+    setShowAddPicker(false);
+  };
+
+  /** Remove a text overlay from a slot */
+  const removeText = (index: number) => {
+    if (template.slots[index]?.textOverlay) {
+      // Has base — mark as null to hide
+      onTextOverridesChange({ ...textOverrides, [index]: null });
+    } else {
+      // User-added — delete entirely
+      const next = { ...textOverrides };
+      delete next[index];
+      onTextOverridesChange(next);
+    }
+    if (expandedSlot === index) setExpandedSlot(null);
+  };
+
+  /** Restore a removed text */
+  const restoreText = (index: number) => {
+    const next = { ...textOverrides };
+    delete next[index];
+    onTextOverridesChange(next);
+  };
+
+  const totalTexts = textSlots.length + removedSlots.length;
+  if (totalTexts === 0 && template.defaultTexts.length === 0 && emptySlots.length === 0) return null;
 
   return (
     <div className="card-glow p-5">
-      <div className="flex items-center justify-between mb-3">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
         <h3 className="text-sm font-bold text-white flex items-center gap-2">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="text-accent-gold" strokeWidth="2">
             <path d="M4 7V4h16v3" />
@@ -330,90 +500,360 @@ function TextOverlayEditor({
           </svg>
           Text Overlays
         </h3>
-        <span className="text-[10px] text-text-muted">{textSlots.length} text{textSlots.length !== 1 ? 's' : ''}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-text-muted">
+            {textSlots.length} active
+          </span>
+          <button
+            onClick={() => setShowAddPicker(!showAddPicker)}
+            className="text-[10px] bg-accent-gold/10 text-accent-gold border border-accent-gold/30 px-2 py-0.5 rounded hover:bg-accent-gold/20 transition-colors flex items-center gap-1"
+          >
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            Add Text
+          </button>
+        </div>
       </div>
 
-      <div className="space-y-3">
-        {textSlots.map(({ slot, index }) => {
-          const overlay = slot.textOverlay!;
-          const isRemoved = textOverrides[index] === null;
-          const currentText = textOverrides[index] !== undefined
-            ? textOverrides[index]
-            : overlay.text;
+      {/* Add text to slot picker */}
+      {showAddPicker && (
+        <div className="mb-4 p-3 bg-bg-input/50 border border-accent-gold/20 rounded-lg">
+          <p className="text-[10px] text-text-muted mb-2">Choose a slot to add text to:</p>
+          <div className="flex flex-wrap gap-1.5">
+            {emptySlots.length === 0 ? (
+              <span className="text-[10px] text-text-muted italic">All slots have text</span>
+            ) : (
+              emptySlots.map(i => {
+                const assignedMedia = mediaById.get(slotAssignments[i] || '');
+                return (
+                  <button
+                    key={i}
+                    onClick={() => addTextToSlot(i)}
+                    className="text-[10px] bg-bg-card border border-border-subtle rounded px-2 py-1.5 hover:border-accent-gold/40 hover:bg-accent-gold/5 transition-colors flex items-center gap-1.5"
+                    title={assignedMedia ? assignedMedia.name : `Slot ${i + 1}`}
+                  >
+                    <span className="font-mono text-text-muted">#{i + 1}</span>
+                    {assignedMedia && (
+                      <span className="text-white/60 truncate max-w-[80px]">{assignedMedia.name.split('.')[0]}</span>
+                    )}
+                  </button>
+                );
+              })
+            )}
+          </div>
+          <button
+            onClick={() => setShowAddPicker(false)}
+            className="text-[10px] text-text-muted hover:text-white mt-2"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {/* Active text overlays */}
+      <div className="space-y-2">
+        {textSlots.map(({ index }) => {
+          const resolved = getResolved(index);
+          if (!resolved) return null;
+          const isExpanded = expandedSlot === index;
+          const assignedMedia = mediaById.get(slotAssignments[index] || '');
+          const thumbSrc = assignedMedia
+            ? assignedMedia.type === 'video'
+              ? assignedMedia.thumbnailUrl || assignedMedia.url
+              : assignedMedia.url
+            : null;
 
           return (
-            <div key={index} className={`flex items-center gap-3 ${isRemoved ? 'opacity-40' : ''}`}>
-              {/* Slot badge */}
-              <span className="text-[10px] font-mono text-text-muted bg-bg-input px-2 py-1 rounded shrink-0">
-                Slot {index + 1}
-              </span>
-
-              {/* Text input */}
-              <input
-                type="text"
-                value={isRemoved ? '' : (currentText || '')}
-                onChange={(e) => {
-                  onTextOverridesChange({
-                    ...textOverrides,
-                    [index]: e.target.value,
-                  });
-                }}
-                disabled={isRemoved}
-                placeholder={overlay.text}
-                className="flex-1 px-3 py-1.5 bg-bg-input border border-border-subtle rounded-lg text-xs text-white placeholder:text-text-muted focus:border-accent-gold focus:outline-none disabled:opacity-50"
-              />
-
-              {/* Animation badge */}
-              <span className="text-[9px] font-mono text-accent-gold/60 bg-accent-gold/5 px-1.5 py-0.5 rounded shrink-0">
-                {overlay.animation}
-              </span>
-
-              {/* Position badge */}
-              <span className="text-[9px] font-mono text-text-muted shrink-0">
-                {overlay.position}
-              </span>
-
-              {/* Remove/restore button */}
-              <button
-                onClick={() => {
-                  if (isRemoved) {
-                    const next = { ...textOverrides };
-                    delete next[index];
-                    onTextOverridesChange(next);
-                  } else {
-                    onTextOverridesChange({
-                      ...textOverrides,
-                      [index]: null,
-                    });
-                  }
-                }}
-                className={`p-1 rounded transition-colors ${
-                  isRemoved
-                    ? 'text-accent-gold hover:bg-accent-gold/10'
-                    : 'text-text-muted hover:text-red-400 hover:bg-red-400/10'
-                }`}
-                aria-label={isRemoved ? 'Restore text' : 'Remove text'}
-                title={isRemoved ? 'Restore text' : 'Remove text'}
+            <div key={index} className="border border-border-subtle rounded-lg overflow-hidden bg-bg-card/50">
+              {/* Compact row — always visible */}
+              <div
+                className="flex items-center gap-2 p-2 cursor-pointer hover:bg-white/[0.02] transition-colors"
+                onClick={() => setExpandedSlot(isExpanded ? null : index)}
               >
-                {isRemoved ? (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M3 12a9 9 0 1 0 9-9 9 9 0 0 0-9 9" />
-                    <path d="M12 8v4l2 2" />
-                  </svg>
-                ) : (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <line x1="18" y1="6" x2="6" y2="18" />
-                    <line x1="6" y1="6" x2="18" y2="18" />
-                  </svg>
-                )}
-              </button>
+                {/* Mini preview */}
+                <div
+                  className="w-16 h-10 rounded overflow-hidden bg-black shrink-0 relative"
+                  title={`Slot ${index + 1}`}
+                >
+                  {thumbSrc ? (
+                    <img src={thumbSrc} alt="" className="w-full h-full object-cover opacity-60" />
+                  ) : (
+                    <div className="w-full h-full bg-gradient-to-br from-bg-hover to-bg-card" />
+                  )}
+                  {/* Position indicator */}
+                  <div
+                    className="absolute left-1/2 -translate-x-1/2 px-1 text-center"
+                    style={{
+                      top: resolved.position === 'top' ? '10%'
+                        : resolved.position === 'bottom' ? 'auto'
+                        : '50%',
+                      bottom: resolved.position === 'bottom' ? '10%' : 'auto',
+                      transform: resolved.position === 'center'
+                        ? 'translate(-50%, -50%)'
+                        : 'translateX(-50%)',
+                      fontSize: '6px',
+                      fontWeight: resolved.fontWeight === 'black' ? 900 : resolved.fontWeight === 'bold' ? 700 : 400,
+                      color: resolved.color,
+                      textShadow: '0 1px 2px rgba(0,0,0,0.9)',
+                      lineHeight: 1,
+                      whiteSpace: 'nowrap',
+                      maxWidth: '90%',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {resolved.text.slice(0, 15)}{resolved.text.length > 15 ? '…' : ''}
+                  </div>
+                </div>
+
+                {/* Slot number */}
+                <span className="text-[10px] font-mono text-text-muted bg-bg-input px-1.5 py-0.5 rounded shrink-0">
+                  #{index + 1}
+                </span>
+
+                {/* Text content */}
+                <span className="text-xs text-white truncate flex-1 min-w-0">
+                  {resolved.text}
+                </span>
+
+                {/* Property badges */}
+                <div className="hidden sm:flex items-center gap-1 shrink-0">
+                  <span className="text-[8px] font-mono text-accent-gold/50 bg-accent-gold/5 px-1 py-0.5 rounded">
+                    {resolved.fontSize.toUpperCase()}
+                  </span>
+                  <span className="text-[8px] font-mono text-accent-gold/50 bg-accent-gold/5 px-1 py-0.5 rounded">
+                    {resolved.animation === 'none' ? 'static' : resolved.animation}
+                  </span>
+                  <span className="text-[8px] font-mono text-text-muted/50 px-1 py-0.5">
+                    {resolved.position}
+                  </span>
+                </div>
+
+                {/* Expand arrow */}
+                <svg
+                  width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  className={`text-text-muted shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                  strokeWidth="2"
+                >
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </div>
+
+              {/* Expanded editor */}
+              {isExpanded && (
+                <div className="border-t border-border-subtle p-3 space-y-3">
+                  {/* Text input */}
+                  <div>
+                    <label className="text-[10px] text-text-muted uppercase tracking-wider block mb-1">Text</label>
+                    <input
+                      type="text"
+                      value={resolved.text}
+                      onChange={(e) => updateOverride(index, { text: e.target.value })}
+                      placeholder="Enter text..."
+                      className="w-full px-3 py-2 bg-bg-input border border-border-subtle rounded-lg text-sm text-white placeholder:text-text-muted focus:border-accent-gold focus:outline-none"
+                    />
+                  </div>
+
+                  {/* Font Size */}
+                  <div>
+                    <label className="text-[10px] text-text-muted uppercase tracking-wider block mb-1.5">Size</label>
+                    <div className="flex gap-1.5">
+                      {FONT_SIZE_OPTIONS.map(opt => (
+                        <button
+                          key={opt.value}
+                          onClick={() => updateOverride(index, { fontSize: opt.value })}
+                          className={`flex-1 py-1.5 rounded-md text-center transition-all border ${
+                            resolved.fontSize === opt.value
+                              ? 'bg-accent-gold/15 border-accent-gold/40 text-accent-gold'
+                              : 'bg-bg-input border-border-subtle text-text-muted hover:text-white hover:border-white/20'
+                          }`}
+                        >
+                          <span
+                            className="block leading-none"
+                            style={{
+                              fontSize: opt.value === 'sm' ? '10px' : opt.value === 'md' ? '12px' : opt.value === 'lg' ? '15px' : '18px',
+                              fontWeight: 700,
+                            }}
+                          >
+                            {opt.preview}
+                          </span>
+                          <span className="text-[8px] opacity-60 block mt-0.5">{opt.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Weight */}
+                  <div>
+                    <label className="text-[10px] text-text-muted uppercase tracking-wider block mb-1.5">Weight</label>
+                    <div className="flex gap-1.5">
+                      {WEIGHT_OPTIONS.map(opt => (
+                        <button
+                          key={opt.value}
+                          onClick={() => updateOverride(index, { fontWeight: opt.value })}
+                          className={`flex-1 py-1.5 rounded-md text-xs transition-all border ${
+                            resolved.fontWeight === opt.value
+                              ? 'bg-accent-gold/15 border-accent-gold/40 text-accent-gold'
+                              : 'bg-bg-input border-border-subtle text-text-muted hover:text-white hover:border-white/20'
+                          }`}
+                          style={{ fontWeight: opt.value === 'normal' ? 400 : opt.value === 'bold' ? 700 : 900 }}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Position */}
+                  <div>
+                    <label className="text-[10px] text-text-muted uppercase tracking-wider block mb-1.5">Position</label>
+                    <div className="flex gap-1.5">
+                      {POSITION_OPTIONS.map(opt => (
+                        <button
+                          key={opt.value}
+                          onClick={() => updateOverride(index, { position: opt.value })}
+                          className={`flex-1 py-1.5 rounded-md text-xs transition-all border ${
+                            resolved.position === opt.value
+                              ? 'bg-accent-gold/15 border-accent-gold/40 text-accent-gold'
+                              : 'bg-bg-input border-border-subtle text-text-muted hover:text-white hover:border-white/20'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Animation */}
+                  <div>
+                    <label className="text-[10px] text-text-muted uppercase tracking-wider block mb-1.5">Animation</label>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {ANIMATION_OPTIONS.map(opt => (
+                        <button
+                          key={opt.value}
+                          onClick={() => updateOverride(index, { animation: opt.value })}
+                          className={`py-1.5 rounded-md text-center transition-all border ${
+                            resolved.animation === opt.value
+                              ? 'bg-accent-gold/15 border-accent-gold/40 text-accent-gold'
+                              : 'bg-bg-input border-border-subtle text-text-muted hover:text-white hover:border-white/20'
+                          }`}
+                        >
+                          <span className="text-sm block leading-none">{opt.icon}</span>
+                          <span className="text-[9px] block mt-0.5">{opt.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Color */}
+                  <div>
+                    <label className="text-[10px] text-text-muted uppercase tracking-wider block mb-1.5">Color</label>
+                    <div className="flex items-center gap-2">
+                      <div className="flex gap-1.5">
+                        {COLOR_PRESETS.map(c => (
+                          <button
+                            key={c}
+                            onClick={() => updateOverride(index, { color: c })}
+                            className={`w-6 h-6 rounded-full border-2 transition-all ${
+                              resolved.color.toLowerCase() === c.toLowerCase()
+                                ? 'border-accent-gold scale-110'
+                                : 'border-transparent hover:border-white/30'
+                            }`}
+                            style={{ background: c, boxShadow: c === '#000000' ? 'inset 0 0 0 1px rgba(255,255,255,0.2)' : undefined }}
+                            title={c}
+                          />
+                        ))}
+                      </div>
+                      <input
+                        type="color"
+                        value={resolved.color}
+                        onChange={(e) => updateOverride(index, { color: e.target.value })}
+                        className="w-6 h-6 rounded cursor-pointer border border-border-subtle bg-transparent"
+                        title="Custom color"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Live mini-preview */}
+                  <div>
+                    <label className="text-[10px] text-text-muted uppercase tracking-wider block mb-1.5">Preview</label>
+                    <div className="relative h-20 rounded-lg overflow-hidden bg-black">
+                      {thumbSrc && (
+                        <img src={thumbSrc} alt="" className="absolute inset-0 w-full h-full object-cover opacity-40" />
+                      )}
+                      <div
+                        className="absolute left-1/2 px-3 text-center max-w-[90%]"
+                        style={{
+                          top: resolved.position === 'top' ? '15%'
+                            : resolved.position === 'bottom' ? 'auto'
+                            : '50%',
+                          bottom: resolved.position === 'bottom' ? '15%' : 'auto',
+                          transform: resolved.position === 'center'
+                            ? 'translate(-50%, -50%)'
+                            : 'translateX(-50%)',
+                          fontSize: resolved.fontSize === 'xl' ? '18px'
+                            : resolved.fontSize === 'lg' ? '14px'
+                            : resolved.fontSize === 'md' ? '11px' : '9px',
+                          fontWeight: resolved.fontWeight === 'black' ? 900
+                            : resolved.fontWeight === 'bold' ? 700 : 400,
+                          color: resolved.color,
+                          textShadow: resolved.glowColor
+                            ? `0 0 8px ${resolved.glowColor}`
+                            : '0 1px 3px rgba(0,0,0,0.9)',
+                          letterSpacing: resolved.fontWeight === 'black' ? '0.05em' : '0.02em',
+                          textTransform: resolved.fontWeight === 'black' ? 'uppercase' : 'none',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        {resolved.text || 'Your Text'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Remove button */}
+                  <button
+                    onClick={() => removeText(index)}
+                    className="text-[10px] text-red-400/70 hover:text-red-400 hover:bg-red-400/10 px-2 py-1 rounded transition-colors flex items-center gap-1"
+                  >
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                    Remove text from this slot
+                  </button>
+                </div>
+              )}
             </div>
           );
         })}
       </div>
 
+      {/* Removed overlays — offer restore */}
+      {removedSlots.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-border-subtle">
+          <p className="text-[10px] text-text-muted mb-2">Removed:</p>
+          <div className="flex flex-wrap gap-1.5">
+            {removedSlots.map(({ slot, index }) => (
+              <button
+                key={index}
+                onClick={() => restoreText(index)}
+                className="text-[10px] text-text-muted/60 bg-bg-input/50 border border-border-subtle rounded px-2 py-1 hover:text-accent-gold hover:border-accent-gold/30 transition-colors flex items-center gap-1"
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M3 12a9 9 0 1 0 9-9 9 9 0 0 0-9 9" />
+                  <polyline points="12 8 12 12 14 14" />
+                </svg>
+                Slot {index + 1}: &ldquo;{slot.textOverlay?.text}&rdquo;
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <p className="text-[10px] text-text-muted mt-3">
-        Edit text or remove overlays. Changes only affect your export.
+        Tap a text to expand controls. Add text to any slot with the + button.
       </p>
     </div>
   );
@@ -582,13 +1022,14 @@ export default function TemplateStep({
 
       {/* Timeline Visualization (shown when a template is selected) */}
       {activeTemplate && (
-        <TimelineVisualization template={activeTemplate} media={media} />
+        <TimelineVisualization template={activeTemplate} media={media} textOverrides={textOverrides} />
       )}
 
       {/* Text Overlay Editor */}
-      {activeTemplate && activeTemplate.defaultTexts.length > 0 && (
+      {activeTemplate && (
         <TextOverlayEditor
           template={activeTemplate}
+          media={media}
           textOverrides={textOverrides}
           onTextOverridesChange={onTextOverridesChange}
         />

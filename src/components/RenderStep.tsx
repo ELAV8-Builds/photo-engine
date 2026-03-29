@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { MediaFile, MusicTrack, RenderProgress, SmartTemplate, TemplateSlot, TemplateTheme, TextOverlay } from '@/types';
+import { MediaFile, MusicTrack, RenderProgress, SmartTemplate, TemplateSlot, TemplateTheme, TextOverlay, TextOverlayOverride } from '@/types';
 import { SMART_TEMPLATES, assignMediaToSlots, expandTemplateForMedia, formatDuration, getSlotMediaIds, applyBeatSync } from '@/lib/templates';
 import { detectBeats, quantizeSlotsToBeat, getStrongBeats } from '@/lib/beat-detect';
 import { createParticles, updateParticles, drawParticles, drawVignette, drawTintOverlay, getParticleCSS, Particle } from '@/lib/particles';
-import { drawTextOverlay } from '@/lib/text-renderer';
+import { drawTextOverlay, resolveTextOverlay } from '@/lib/text-renderer';
 import { EffectsEngine, templateSlotToEngineSlot, type SlotConfig } from '@/lib/effects-engine';
 import { initFFmpeg, writeFrame, writeAudio, mixAudioTracks, encodeMP4, cleanupFS } from '@/lib/mp4-encoder';
 import { getVideoElement, seekToTime, getVideoTime, loadMediaSource, disposeAllVideos } from '@/lib/video-frame-extractor';
@@ -24,7 +24,7 @@ interface RenderStepProps {
   outputQuality: '720p' | '1080p' | '4k';
   onQualityChange: (q: '720p' | '1080p' | '4k') => void;
   onBack: () => void;
-  textOverrides?: Record<number, string | null>;
+  textOverrides?: Record<number, TextOverlayOverride>;
   mixerOverrides?: MixerOverrides;
   /** Called when export completes successfully — used for auto-saving project */
   onExportComplete?: () => void;
@@ -62,6 +62,7 @@ export default function RenderStep(props: RenderStepProps) {
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const previewEngineRef = useRef<EffectsEngine | null>(null);
   const previewAnimRef = useRef<number>(0);
+  const mediaByIdRef = useRef<Map<string, MediaFile>>(new Map());
   const previewImagesRef = useRef<Map<string, HTMLImageElement>>(new Map());
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const [audioPlaying, setAudioPlaying] = useState(false);
@@ -130,6 +131,11 @@ export default function RenderStep(props: RenderStepProps) {
     return map;
   }, [selectedMedia]);
 
+  // Keep ref in sync so animation loop always reads latest trim values
+  useEffect(() => {
+    mediaByIdRef.current = mediaById;
+  }, [mediaById]);
+
   // ------------------------------------------------------------------
   //  Animated Canvas Preview using v4 EffectsEngine
   // ------------------------------------------------------------------
@@ -193,10 +199,10 @@ export default function RenderStep(props: RenderStepProps) {
         }
 
         // For video-type media, update the video element's currentTime
-        // so the engine draws the correct frame
+        // so the engine draws the correct frame (uses ref for latest trim values)
         const updateVideoTime = (slotIdx: number, progress: number) => {
           const mid = slotAssignments[slotIdx] || '';
-          const media = mediaById.get(mid);
+          const media = mediaByIdRef.current.get(mid);
           if (media?.type === 'video') {
             const source = imageMap.get(slotIdx);
             if (source && source instanceof HTMLVideoElement) {
@@ -946,37 +952,39 @@ export default function RenderStep(props: RenderStepProps) {
           )}
 
           {/* Text preview (static) */}
-          {currentSlot?.textOverlay && textOverrides[previewSlotIndex] !== null && (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <p
-                className="text-center px-6 max-w-[90%] leading-tight"
-                style={{
-                  color: currentSlot.textOverlay.color,
-                  fontSize: currentSlot.textOverlay.fontSize === 'xl' ? 'clamp(1.8rem, 5vw, 3.5rem)'
-                    : currentSlot.textOverlay.fontSize === 'lg' ? 'clamp(1.4rem, 4vw, 2.5rem)'
-                    : currentSlot.textOverlay.fontSize === 'md' ? 'clamp(1rem, 3vw, 1.8rem)'
-                    : 'clamp(0.8rem, 2vw, 1.2rem)',
-                  fontWeight: currentSlot.textOverlay.fontWeight === 'black' ? 900
-                    : currentSlot.textOverlay.fontWeight === 'bold' ? 700 : 400,
-                  textShadow: currentSlot.textOverlay.glowColor
-                    ? `0 0 20px ${currentSlot.textOverlay.glowColor}, 0 0 40px ${currentSlot.textOverlay.glowColor}, 0 2px 10px rgba(0,0,0,0.8)`
-                    : '0 2px 4px rgba(0,0,0,0.9), 0 4px 12px rgba(0,0,0,0.6)',
-                  position: 'absolute',
-                  top: currentSlot.textOverlay.position === 'top' ? '15%'
-                    : currentSlot.textOverlay.position === 'bottom' ? '80%'
-                    : '50%',
-                  left: '50%',
-                  transform: 'translate(-50%, -50%)',
-                  letterSpacing: currentSlot.textOverlay.fontWeight === 'black' ? '0.05em' : '0.02em',
-                  textTransform: currentSlot.textOverlay.fontWeight === 'black' ? 'uppercase' as const : 'none' as const,
-                }}
-              >
-                {typeof textOverrides[previewSlotIndex] === 'string'
-                  ? textOverrides[previewSlotIndex]
-                  : currentSlot.textOverlay.text}
-              </p>
-            </div>
-          )}
+          {currentSlot?.textOverlay && (() => {
+            const resolved = resolveTextOverlay(currentSlot.textOverlay!, textOverrides[previewSlotIndex]);
+            if (!resolved) return null;
+            return (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <p
+                  className="text-center px-6 max-w-[90%] leading-tight"
+                  style={{
+                    color: resolved.color,
+                    fontSize: resolved.fontSize === 'xl' ? 'clamp(1.8rem, 5vw, 3.5rem)'
+                      : resolved.fontSize === 'lg' ? 'clamp(1.4rem, 4vw, 2.5rem)'
+                      : resolved.fontSize === 'md' ? 'clamp(1rem, 3vw, 1.8rem)'
+                      : 'clamp(0.8rem, 2vw, 1.2rem)',
+                    fontWeight: resolved.fontWeight === 'black' ? 900
+                      : resolved.fontWeight === 'bold' ? 700 : 400,
+                    textShadow: resolved.glowColor
+                      ? `0 0 20px ${resolved.glowColor}, 0 0 40px ${resolved.glowColor}, 0 2px 10px rgba(0,0,0,0.8)`
+                      : '0 2px 4px rgba(0,0,0,0.9), 0 4px 12px rgba(0,0,0,0.6)',
+                    position: 'absolute',
+                    top: resolved.position === 'top' ? '15%'
+                      : resolved.position === 'bottom' ? '80%'
+                      : '50%',
+                    left: '50%',
+                    transform: 'translate(-50%, -50%)',
+                    letterSpacing: resolved.fontWeight === 'black' ? '0.05em' : '0.02em',
+                    textTransform: resolved.fontWeight === 'black' ? 'uppercase' as const : 'none' as const,
+                  }}
+                >
+                  {resolved.text}
+                </p>
+              </div>
+            );
+          })()}
         </div>
       </div>
 
@@ -1334,7 +1342,7 @@ async function renderSlotToCanvas(
   height: number,
   slot: TemplateSlot,
   theme: TemplateTheme,
-  textOverrides: Record<number, string | null>,
+  textOverrides: Record<number, TextOverlayOverride>,
   slotIndex: number,
   engine: EffectsEngine,
 ): Promise<void> {
@@ -1392,12 +1400,11 @@ async function renderSlotToCanvas(
     }
 
     // Text overlay
-    if (slot.textOverlay && textOverrides[slotIndex] !== null) {
-      const overlay = { ...slot.textOverlay };
-      if (typeof textOverrides[slotIndex] === 'string') {
-        overlay.text = textOverrides[slotIndex] as string;
+    if (slot.textOverlay) {
+      const resolved = resolveTextOverlay(slot.textOverlay, textOverrides[slotIndex]);
+      if (resolved) {
+        drawTextOverlay(ctx, resolved, width, height, t);
       }
-      drawTextOverlay(ctx, overlay, width, height, t);
     }
 
     // Yield to browser every 5 frames to prevent blocking
@@ -1491,7 +1498,7 @@ async function renderSlotFramesToFFmpeg(
   height: number,
   slot: TemplateSlot,
   theme: TemplateTheme,
-  textOverrides: Record<number, string | null>,
+  textOverrides: Record<number, TextOverlayOverride>,
   slotIndex: number,
   engine: EffectsEngine,
   startFrame: number,
@@ -1540,12 +1547,11 @@ async function renderSlotFramesToFFmpeg(
       drawParticles(ctx, particles, width, height);
       particles = updateParticles(particles, 1 / fps, width, height);
     }
-    if (slot.textOverlay && textOverrides[slotIndex] !== null) {
-      const overlay = { ...slot.textOverlay };
-      if (typeof textOverrides[slotIndex] === 'string') {
-        overlay.text = textOverrides[slotIndex] as string;
+    if (slot.textOverlay) {
+      const resolved = resolveTextOverlay(slot.textOverlay, textOverrides[slotIndex]);
+      if (resolved) {
+        drawTextOverlay(ctx, resolved, width, height, t);
       }
-      drawTextOverlay(ctx, overlay, width, height, t);
     }
 
     // Write frame to ffmpeg virtual FS
@@ -1657,7 +1663,7 @@ async function renderSlotFramesToFFmpegWithSource(
   height: number,
   slot: TemplateSlot,
   theme: TemplateTheme,
-  textOverrides: Record<number, string | null>,
+  textOverrides: Record<number, TextOverlayOverride>,
   slotIndex: number,
   engine: EffectsEngine,
   startFrame: number,
@@ -1698,12 +1704,11 @@ async function renderSlotFramesToFFmpegWithSource(
       drawParticles(ctx, particles, width, height);
       particles = updateParticles(particles, 1 / fps, width, height);
     }
-    if (slot.textOverlay && textOverrides[slotIndex] !== null) {
-      const overlay = { ...slot.textOverlay };
-      if (typeof textOverrides[slotIndex] === 'string') {
-        overlay.text = textOverrides[slotIndex] as string;
+    if (slot.textOverlay) {
+      const resolved = resolveTextOverlay(slot.textOverlay, textOverrides[slotIndex]);
+      if (resolved) {
+        drawTextOverlay(ctx, resolved, width, height, t);
       }
-      drawTextOverlay(ctx, overlay, width, height, t);
     }
 
     await writeFrame(ffmpeg, canvas, frameNumber);
