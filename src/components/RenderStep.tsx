@@ -952,8 +952,18 @@ export default function RenderStep(props: RenderStepProps) {
           )}
 
           {/* Text preview (static) */}
-          {currentSlot?.textOverlay && (() => {
-            const resolved = resolveTextOverlay(currentSlot.textOverlay!, textOverrides[previewSlotIndex]);
+          {(() => {
+            const override = textOverrides[previewSlotIndex];
+            let resolved: TextOverlay | null = null;
+            if (currentSlot?.textOverlay) {
+              resolved = resolveTextOverlay(currentSlot.textOverlay, override);
+            } else if (override && typeof override === 'object' && override !== null) {
+              const defaults: TextOverlay = {
+                text: 'Your Text', position: 'center', fontSize: 'lg',
+                fontWeight: 'bold', animation: 'fade-in', color: '#ffffff',
+              };
+              resolved = { ...defaults, ...override } as TextOverlay;
+            }
             if (!resolved) return null;
             return (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -1399,11 +1409,19 @@ async function renderSlotToCanvas(
       particles = updateParticles(particles, 1 / fps, width, height);
     }
 
-    // Text overlay
-    if (slot.textOverlay) {
-      const resolved = resolveTextOverlay(slot.textOverlay, textOverrides[slotIndex]);
-      if (resolved) {
-        drawTextOverlay(ctx, resolved, width, height, t);
+    // Text overlay (base from template or user-added via overrides)
+    {
+      const override = textOverrides[slotIndex];
+      if (slot.textOverlay) {
+        const resolved = resolveTextOverlay(slot.textOverlay, override);
+        if (resolved) drawTextOverlay(ctx, resolved, width, height, t);
+      } else if (override && typeof override === 'object' && override !== null) {
+        // User-added text overlay (no base)
+        const defaults: TextOverlay = {
+          text: 'Your Text', position: 'center', fontSize: 'lg',
+          fontWeight: 'bold', animation: 'fade-in', color: '#ffffff',
+        };
+        drawTextOverlay(ctx, { ...defaults, ...override } as TextOverlay, width, height, t);
       }
     }
 
