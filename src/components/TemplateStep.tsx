@@ -3,8 +3,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { SMART_TEMPLATES, assignMediaToSlots, formatDuration } from '@/lib/templates';
 import { getParticleCSS } from '@/lib/particles';
-import { MediaFile, SmartTemplate, TextOverlay, TextOverlayOverride } from '@/types';
-import { resolveTextOverlay } from '@/lib/text-renderer';
+import { MediaFile, SmartTemplate, TextOverlay, TextOverlayOverride, TextBackdrop } from '@/types';
+import { resolveTextOverlay, getTextAnimationCSS, getBackdropPreviewCSS } from '@/lib/text-renderer';
 import TemplateMixer, { type MixerOverrides } from '@/components/TemplateMixer';
 
 interface TemplateStepProps {
@@ -339,7 +339,23 @@ const ANIMATION_OPTIONS: { value: TextOverlay['animation']; label: string; icon:
   { value: 'typewriter', label: 'Typewriter', icon: '⌨' },
   { value: 'scale-pop', label: 'Pop', icon: '💥' },
   { value: 'glitch-in', label: 'Glitch', icon: '⚡' },
+  { value: 'blur-in', label: 'Blur In', icon: '◉' },
+  { value: 'bounce-in', label: 'Bounce', icon: '⤴' },
+  { value: 'wave', label: 'Wave', icon: '〰' },
+  { value: 'neon-flicker', label: 'Neon', icon: '💡' },
   { value: 'none', label: 'Static', icon: '—' },
+];
+
+const BACKDROP_OPTIONS: { value: TextBackdrop; label: string; icon: string }[] = [
+  { value: 'none', label: 'Default', icon: '▬' },
+  { value: 'pill', label: 'Pill', icon: '💊' },
+  { value: 'glass', label: 'Glass', icon: '❄' },
+  { value: 'neon-box', label: 'Neon Box', icon: '⬡' },
+  { value: 'gradient-bar', label: 'Gradient', icon: '▰' },
+  { value: 'cinematic-bar', label: 'Cinema', icon: '🎬' },
+  { value: 'tag', label: 'Tag', icon: '🏷' },
+  { value: 'outline', label: 'Outline', icon: '□' },
+  { value: 'shadow-block', label: 'Shadow', icon: '▣' },
 ];
 
 const POSITION_OPTIONS: { value: TextOverlay['position']; label: string }[] = [
@@ -728,7 +744,7 @@ function TextOverlayEditor({
                   {/* Animation */}
                   <div>
                     <label className="text-[10px] text-text-muted uppercase tracking-wider block mb-1.5">Animation</label>
-                    <div className="grid grid-cols-3 gap-1.5">
+                    <div className="grid grid-cols-5 gap-1.5">
                       {ANIMATION_OPTIONS.map(opt => (
                         <button
                           key={opt.value}
@@ -740,7 +756,28 @@ function TextOverlayEditor({
                           }`}
                         >
                           <span className="text-sm block leading-none">{opt.icon}</span>
-                          <span className="text-[9px] block mt-0.5">{opt.label}</span>
+                          <span className="text-[8px] block mt-0.5">{opt.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Backdrop / Container */}
+                  <div>
+                    <label className="text-[10px] text-text-muted uppercase tracking-wider block mb-1.5">Backdrop</label>
+                    <div className="grid grid-cols-5 gap-1.5">
+                      {BACKDROP_OPTIONS.map(opt => (
+                        <button
+                          key={opt.value}
+                          onClick={() => updateOverride(index, { backdrop: opt.value })}
+                          className={`py-1.5 rounded-md text-center transition-all border ${
+                            (resolved.backdrop || 'none') === opt.value
+                              ? 'bg-accent-gold/15 border-accent-gold/40 text-accent-gold'
+                              : 'bg-bg-input border-border-subtle text-text-muted hover:text-white hover:border-white/20'
+                          }`}
+                        >
+                          <span className="text-sm block leading-none">{opt.icon}</span>
+                          <span className="text-[7px] block mt-0.5">{opt.label}</span>
                         </button>
                       ))}
                     </div>
@@ -778,12 +815,13 @@ function TextOverlayEditor({
                   {/* Live mini-preview */}
                   <div>
                     <label className="text-[10px] text-text-muted uppercase tracking-wider block mb-1.5">Preview</label>
-                    <div className="relative h-20 rounded-lg overflow-hidden bg-black">
+                    <div className="relative h-24 rounded-lg overflow-hidden bg-black">
                       {thumbSrc && (
                         <img src={thumbSrc} alt="" className="absolute inset-0 w-full h-full object-cover opacity-40" />
                       )}
+                      {/* Backdrop container */}
                       <div
-                        className="absolute left-1/2 px-3 text-center max-w-[90%]"
+                        className="absolute left-1/2 text-center max-w-[95%]"
                         style={{
                           top: resolved.position === 'top' ? '15%'
                             : resolved.position === 'bottom' ? 'auto'
@@ -792,23 +830,29 @@ function TextOverlayEditor({
                           transform: resolved.position === 'center'
                             ? 'translate(-50%, -50%)'
                             : 'translateX(-50%)',
-                          fontSize: resolved.fontSize === 'xl' ? '18px'
-                            : resolved.fontSize === 'lg' ? '14px'
-                            : resolved.fontSize === 'md' ? '11px' : '9px',
-                          fontWeight: resolved.fontWeight === 'black' ? 900
-                            : resolved.fontWeight === 'bold' ? 700 : 400,
-                          color: resolved.color,
-                          textShadow: resolved.glowColor
-                            ? `0 0 8px ${resolved.glowColor}`
-                            : '0 1px 3px rgba(0,0,0,0.9)',
-                          letterSpacing: resolved.fontWeight === 'black' ? '0.05em' : '0.02em',
-                          textTransform: resolved.fontWeight === 'black' ? 'uppercase' : 'none',
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
+                          ...((getBackdropPreviewCSS(resolved) ?? {}) as React.CSSProperties),
                         }}
                       >
-                        {resolved.text || 'Your Text'}
+                        <span
+                          style={{
+                            fontSize: resolved.fontSize === 'xl' ? '18px'
+                              : resolved.fontSize === 'lg' ? '14px'
+                              : resolved.fontSize === 'md' ? '11px' : '9px',
+                            fontWeight: resolved.fontWeight === 'black' ? 900
+                              : resolved.fontWeight === 'bold' ? 700 : 400,
+                            color: resolved.backdrop === 'tag' ? undefined : resolved.color,
+                            textShadow: resolved.glowColor
+                              ? `0 0 8px ${resolved.glowColor}`
+                              : resolved.backdrop === 'tag' ? 'none' : '0 1px 3px rgba(0,0,0,0.9)',
+                            letterSpacing: resolved.fontWeight === 'black' ? '0.05em' : '0.02em',
+                            textTransform: resolved.fontWeight === 'black' ? 'uppercase' as const : 'none' as const,
+                            whiteSpace: 'nowrap' as const,
+                            overflow: 'hidden' as const,
+                            textOverflow: 'ellipsis' as const,
+                          }}
+                        >
+                          {resolved.text || 'Your Text'}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -879,6 +923,17 @@ export default function TemplateStep({
   const selectedMedia = media.filter((m) => m.selected);
   const activeTemplate = SMART_TEMPLATES.find((t) => t.id === selectedTemplate) || null;
   const hasOverrides = Object.values(mixerOverrides).some(v => v !== undefined && v !== null && (Array.isArray(v) ? v.length > 0 : true));
+
+  // Inject text animation CSS on mount
+  useEffect(() => {
+    const styleId = 'text-overlay-animations';
+    if (!document.getElementById(styleId)) {
+      const style = document.createElement('style');
+      style.id = styleId;
+      style.textContent = getTextAnimationCSS();
+      document.head.appendChild(style);
+    }
+  }, []);
 
   return (
     <div className="space-y-6 step-content">

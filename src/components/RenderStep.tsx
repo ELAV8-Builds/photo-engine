@@ -5,7 +5,7 @@ import { MediaFile, MusicTrack, RenderProgress, SmartTemplate, TemplateSlot, Tem
 import { SMART_TEMPLATES, assignMediaToSlots, expandTemplateForMedia, formatDuration, getSlotMediaIds, applyBeatSync } from '@/lib/templates';
 import { detectBeats, quantizeSlotsToBeat, getStrongBeats } from '@/lib/beat-detect';
 import { createParticles, updateParticles, drawParticles, drawVignette, drawTintOverlay, getParticleCSS, Particle } from '@/lib/particles';
-import { drawTextOverlay, resolveTextOverlay } from '@/lib/text-renderer';
+import { drawTextOverlay, resolveTextOverlay, getBackdropPreviewCSS, getTextAnimationCSS } from '@/lib/text-renderer';
 import { EffectsEngine, templateSlotToEngineSlot, type SlotConfig } from '@/lib/effects-engine';
 import { initFFmpeg, writeFrame, writeAudio, mixAudioTracks, encodeMP4, cleanupFS } from '@/lib/mp4-encoder';
 import { getVideoElement, seekToTime, getVideoTime, loadMediaSource, disposeAllVideos } from '@/lib/video-frame-extractor';
@@ -70,6 +70,17 @@ export default function RenderStep(props: RenderStepProps) {
 
   const selectedMedia = useMemo(() => photos.filter(p => p.selected), [photos]);
   const baseTemplate = SMART_TEMPLATES.find(t => t.id === selectedTemplate) || null;
+
+  // Inject text animation CSS on mount
+  useEffect(() => {
+    const styleId = 'text-overlay-animations';
+    if (!document.getElementById(styleId)) {
+      const style = document.createElement('style');
+      style.id = styleId;
+      style.textContent = getTextAnimationCSS();
+      document.head.appendChild(style);
+    }
+  }, []);
 
   // Beat detection state
   const [beatInfo, setBeatInfo] = useState<{ beats: number[]; bpm: number; duration: number } | null>(null);
@@ -951,7 +962,7 @@ export default function RenderStep(props: RenderStepProps) {
             />
           )}
 
-          {/* Text preview (static) */}
+          {/* Text preview (animated with backdrop) */}
           {(() => {
             const override = textOverrides[previewSlotIndex];
             let resolved: TextOverlay | null = null;
@@ -965,33 +976,47 @@ export default function RenderStep(props: RenderStepProps) {
               resolved = { ...defaults, ...override } as TextOverlay;
             }
             if (!resolved) return null;
+            const backdropCSS = getBackdropPreviewCSS(resolved) ?? {};
+            const animClass = `text-anim-${resolved.animation || 'none'}`;
             return (
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <p
-                  className="text-center px-6 max-w-[90%] leading-tight"
+              <div className="absolute inset-0 pointer-events-none" key={`text-${previewSlotIndex}`}>
+                {/* Backdrop container */}
+                <div
+                  className={animClass}
                   style={{
-                    color: resolved.color,
-                    fontSize: resolved.fontSize === 'xl' ? 'clamp(1.8rem, 5vw, 3.5rem)'
-                      : resolved.fontSize === 'lg' ? 'clamp(1.4rem, 4vw, 2.5rem)'
-                      : resolved.fontSize === 'md' ? 'clamp(1rem, 3vw, 1.8rem)'
-                      : 'clamp(0.8rem, 2vw, 1.2rem)',
-                    fontWeight: resolved.fontWeight === 'black' ? 900
-                      : resolved.fontWeight === 'bold' ? 700 : 400,
-                    textShadow: resolved.glowColor
-                      ? `0 0 20px ${resolved.glowColor}, 0 0 40px ${resolved.glowColor}, 0 2px 10px rgba(0,0,0,0.8)`
-                      : '0 2px 4px rgba(0,0,0,0.9), 0 4px 12px rgba(0,0,0,0.6)',
                     position: 'absolute',
                     top: resolved.position === 'top' ? '15%'
                       : resolved.position === 'bottom' ? '80%'
                       : '50%',
                     left: '50%',
                     transform: 'translate(-50%, -50%)',
-                    letterSpacing: resolved.fontWeight === 'black' ? '0.05em' : '0.02em',
-                    textTransform: resolved.fontWeight === 'black' ? 'uppercase' as const : 'none' as const,
+                    textAlign: 'center',
+                    maxWidth: '90%',
+                    ...(backdropCSS as React.CSSProperties),
                   }}
                 >
-                  {resolved.text}
-                </p>
+                  <span
+                    className="leading-tight"
+                    style={{
+                      color: resolved.backdrop === 'tag' ? undefined : resolved.color,
+                      fontSize: resolved.fontSize === 'xl' ? 'clamp(1.8rem, 5vw, 3.5rem)'
+                        : resolved.fontSize === 'lg' ? 'clamp(1.4rem, 4vw, 2.5rem)'
+                        : resolved.fontSize === 'md' ? 'clamp(1rem, 3vw, 1.8rem)'
+                        : 'clamp(0.8rem, 2vw, 1.2rem)',
+                      fontWeight: resolved.fontWeight === 'black' ? 900
+                        : resolved.fontWeight === 'bold' ? 700 : 400,
+                      textShadow: resolved.glowColor
+                        ? `0 0 20px ${resolved.glowColor}, 0 0 40px ${resolved.glowColor}, 0 2px 10px rgba(0,0,0,0.8)`
+                        : resolved.backdrop === 'tag' ? 'none'
+                        : '0 2px 4px rgba(0,0,0,0.9), 0 4px 12px rgba(0,0,0,0.6)',
+                      letterSpacing: resolved.fontWeight === 'black' ? '0.05em' : '0.02em',
+                      textTransform: resolved.fontWeight === 'black' ? 'uppercase' as const : 'none' as const,
+                      whiteSpace: 'nowrap' as const,
+                    }}
+                  >
+                    {resolved.text}
+                  </span>
+                </div>
               </div>
             );
           })()}

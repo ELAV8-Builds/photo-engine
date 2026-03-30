@@ -77,16 +77,42 @@ export interface TransitionOverlayConfig {
   opacity?: number;
 }
 
+/** Text backdrop / container style */
+export type TextBackdrop =
+  | 'none'
+  | 'pill'           // rounded pill (like iMessage bubble)
+  | 'glass'          // frosted glassmorphism
+  | 'neon-box'       // neon-lit border box
+  | 'gradient-bar'   // horizontal gradient strip
+  | 'cinematic-bar'  // letterbox-style dark bar
+  | 'tag'            // small label/tag style
+  | 'outline'        // text-stroke outline only, no fill bg
+  | 'shadow-block';  // heavy drop-shadow block
+
 /** Text overlay that can appear on a slot or as intro/outro */
 export interface TextOverlay {
   text: string;
   position: 'top' | 'center' | 'bottom';
   fontSize: 'sm' | 'md' | 'lg' | 'xl';
   fontWeight: 'normal' | 'bold' | 'black';
-  animation: 'fade-in' | 'slide-up' | 'typewriter' | 'scale-pop' | 'glitch-in' | 'none';
+  animation:
+    | 'fade-in'
+    | 'slide-up'
+    | 'typewriter'
+    | 'scale-pop'
+    | 'glitch-in'
+    | 'blur-in'       // blurry to sharp
+    | 'bounce-in'     // spring bounce from below
+    | 'wave'          // per-letter wave animation
+    | 'neon-flicker'  // neon sign flicker on
+    | 'none';
   color: string;
   /** Optional shadow/glow color */
   glowColor?: string;
+  /** Backdrop/container style (default: 'none') */
+  backdrop?: TextBackdrop;
+  /** Letter spacing multiplier — 0 = tight, 1 = normal, 2+ = wide (default: undefined = auto) */
+  letterSpacing?: number;
 }
 
 /**
