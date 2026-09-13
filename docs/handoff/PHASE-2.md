@@ -106,7 +106,11 @@ The user's X5 SD card is mounted at `/Volumes/Insta360 X5/DCIM/Camera01` (41 `.i
 ### Verified numbers (real X5 footage)
 - Flat reframe 8K INSV → 1080p: ≈2.3× realtime with hardware decode; from LRV ≈40× realtime.
 - Signals pass: 27.5× realtime (LRV, unthrottled). 67 s clip → 67 samples at 1 fps (quiet profile). Under the quiet budget (nice 19, 2 threads) a 720p proxy renders at roughly 1× realtime; balanced ≈ 2×, fast ≈ 4× — the profile trades import speed for footprint by design.
-- Whole 41-clip card: thumbnails appear within ~1 min; proxies + signals complete in the background.
+- Whole 41-clip card (92.5 min of footage): thumbnails within ~1 min; 41/41 flat proxies and 41/41 signal
+  tracks completed in the background with **0 failed jobs**; proxies occupy ~1.9 GB (720p, 6 Mbps). Stage-1 gate
+  marks ~95 % of seconds usable on this card and flagged 21 audio events.
+- Crash recovery tested: dev server killed mid-proxy → on restart the stale `*.tmp.mp4` was swept and 77 pending
+  jobs resumed automatically. Server shutdown now also terminates live ffmpeg children.
 - Browser plays the proxy via Range requests: load 39 ms, seek to 30 s in 31 ms.
 - `qwen3.5:9b` via `/api/chat` with `"think": false`, `"format": "json"`, temperature 0.1: **0.91 s per 512×288 frame**,
   100 % valid JSON over 17 frames, correct dark/blown-out/faces flags, sensible 10-word captions.

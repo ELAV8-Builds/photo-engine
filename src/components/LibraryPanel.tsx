@@ -37,7 +37,9 @@ export default function LibraryPanel({ inProjectIds, onAddMedia }: LibraryPanelP
   const [showPathInput, setShowPathInput] = useState(false);
   const [manualPath, setManualPath] = useState('');
   const [loaded, setLoaded] = useState(false);
+  const [pollTick, setPollTick] = useState(0);
   const wasActive = useRef(false);
+  const pollFailed = useRef(false);
 
   const isActive = !!jobs && (jobs.queued > 0 || jobs.running.length > 0);
 
@@ -71,20 +73,30 @@ export default function LibraryPanel({ inProjectIds, onAddMedia }: LibraryPanelP
   }, [refreshRootsAndItems, refreshJobs]);
 
   // Poll faster while the server is busy; refresh items as thumbnails land.
+  // The loop must survive transient failures (e.g. the local server restarting),
+  // so every tick schedules the next one regardless of outcome.
   useEffect(() => {
     if (!loaded) return;
     const delay = isActive ? POLL_ACTIVE_MS : POLL_IDLE_MS;
     const timer = setTimeout(async () => {
       try {
         await refreshJobs();
-        if (isActive || wasActive.current) await refreshRootsAndItems();
+        // Recovering from an outage: reload everything and clear the stale error.
+        if (isActive || wasActive.current || pollFailed.current) await refreshRootsAndItems();
+        if (pollFailed.current) {
+          pollFailed.current = false;
+          setError(null);
+        }
         wasActive.current = isActive;
       } catch (err) {
+        pollFailed.current = true;
         setError(errorText(err));
+      } finally {
+        setPollTick((t) => t + 1);
       }
     }, delay);
     return () => clearTimeout(timer);
-  }, [loaded, isActive, jobs, refreshJobs, refreshRootsAndItems]);
+  }, [loaded, isActive, pollTick, refreshJobs, refreshRootsAndItems]);
 
   // ---- root actions ---------------------------------------------------------
 
