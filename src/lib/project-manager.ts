@@ -8,6 +8,7 @@
 import { v4 as uuid } from 'uuid';
 import { MediaFile, MusicTrack, TextOverlayOverride } from '@/types';
 import { dbGetAll, dbGet, dbPut, dbDelete, dbSearch, dbCount, STORES, dbGetAllByIndex } from './db';
+import { mediaUrl } from './library-client';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -45,8 +46,16 @@ export interface SavedProject {
 export interface SavedMediaItem {
   id: string;
   name: string;
-  /** Image/video blob stored in the project */
-  mediaBlob: Blob;
+  /**
+   * Image/video blob stored in the project. Absent for library-backed items,
+   * which are re-resolved from the local server by `libraryItemId` on load
+   * (copying a multi-gigabyte source into IndexedDB is neither needed nor wise).
+   */
+  mediaBlob?: Blob;
+  /** Library item id when the media lives in a scanned folder. */
+  libraryItemId?: string;
+  is360?: boolean;
+  capturedAt?: number;
   /** MIME type */
   mimeType: string;
   width: number;
@@ -111,31 +120,7 @@ export async function saveProject(opts: {
   const thumbnailUrl = await generateProjectThumbnail(opts.media);
 
   // Convert MediaFiles to saveable format
-  const mediaItems = await Promise.all(
-    opts.media.map(async (m) => {
-      const blob = await fetchBlobFromUrl(m.url);
-      const thumbnailDataUrl = m.type === 'video'
-        ? (m.thumbnailUrl || '')
-        : await generateThumbnailDataUrl(m.url, 200);
-
-      const item: SavedMediaItem = {
-        id: m.id,
-        name: m.name,
-        mediaBlob: blob,
-        mimeType: blob.type || (m.type === 'video' ? 'video/mp4' : 'image/jpeg'),
-        width: m.width,
-        height: m.height,
-        selected: m.selected,
-        order: m.order,
-        type: m.type,
-        duration: m.duration,
-        trimStart: m.trimStart,
-        trimEnd: m.trimEnd,
-        thumbnailDataUrl,
-      };
-      return item;
-    }),
-  );
+  const mediaItems = await Promise.all(opts.media.map(toSavedMediaItem));
 
   // Convert music track
   let musicTrack: SavedMusicTrack | null = null;
@@ -213,26 +198,7 @@ export async function updateProject(
 
   // Update media if provided
   if (opts.media) {
-    existing.mediaItems = await Promise.all(
-      opts.media.map(async (m) => {
-        const blob = await fetchBlobFromUrl(m.url);
-        return {
-          id: m.id,
-          name: m.name,
-          mediaBlob: blob,
-          mimeType: blob.type || (m.type === 'video' ? 'video/mp4' : 'image/jpeg'),
-          width: m.width,
-          height: m.height,
-          selected: m.selected,
-          order: m.order,
-          type: m.type,
-          duration: m.duration,
-          trimStart: m.trimStart,
-          trimEnd: m.trimEnd,
-          thumbnailDataUrl: m.type === 'video' ? (m.thumbnailUrl || '') : await generateThumbnailDataUrl(m.url, 200),
-        };
-      }),
-    );
+    existing.mediaItems = await Promise.all(opts.media.map(toSavedMediaItem));
     existing.mediaCount = opts.media.filter((m) => m.selected).length;
     existing.thumbnailUrl = await generateProjectThumbnail(opts.media);
   }
@@ -259,22 +225,38 @@ export async function loadProject(id: string): Promise<{
 
   // Convert SavedMediaItems back to MediaFiles
   const media: MediaFile[] = project.mediaItems.map((item) => {
-    const url = URL.createObjectURL(item.mediaBlob);
-    return {
+    const common = {
       id: item.id,
-      file: new File([item.mediaBlob], item.name, { type: item.mimeType }),
-      url,
       name: item.name,
       width: item.width,
       height: item.height,
       selected: item.selected,
-      faces: [], // Faces will be re-detected on load
+      faces: [] as MediaFile['faces'], // Faces will be re-detected on load
       order: item.order,
       type: item.type,
       duration: item.duration,
       trimStart: item.trimStart,
       trimEnd: item.trimEnd,
       thumbnailUrl: item.thumbnailDataUrl,
+    };
+
+    // Library-backed: the local server still streams it; nothing was copied.
+    if (item.libraryItemId) {
+      const useProxy = item.type === 'video' && !!item.is360;
+      return {
+        ...common,
+        url: item.type === 'video' ? mediaUrl.stream(item.libraryItemId, useProxy ? 'proxy' : 'original') : mediaUrl.image(item.libraryItemId, 2048),
+        libraryItemId: item.libraryItemId,
+        is360: item.is360,
+        capturedAt: item.capturedAt,
+      };
+    }
+
+    const blob = item.mediaBlob ?? new Blob([], { type: item.mimeType });
+    return {
+      ...common,
+      file: new File([blob], item.name, { type: item.mimeType }),
+      url: URL.createObjectURL(blob),
     };
   });
 
@@ -415,6 +397,44 @@ function projectToSummary(p: SavedProject): ProjectSummary {
 async function fetchBlobFromUrl(url: string): Promise<Blob> {
   const res = await fetch(url);
   return res.blob();
+}
+
+/**
+ * Serialise one editor MediaFile for IndexedDB. Uploaded files are copied in
+ * as blobs; library-backed items are stored by reference (id + server URLs).
+ */
+async function toSavedMediaItem(m: MediaFile): Promise<SavedMediaItem> {
+  const base = {
+    id: m.id,
+    name: m.name,
+    width: m.width,
+    height: m.height,
+    selected: m.selected,
+    order: m.order,
+    type: m.type,
+    duration: m.duration,
+    trimStart: m.trimStart,
+    trimEnd: m.trimEnd,
+  };
+
+  if (m.libraryItemId) {
+    return {
+      ...base,
+      libraryItemId: m.libraryItemId,
+      is360: m.is360,
+      capturedAt: m.capturedAt,
+      mimeType: m.type === 'video' ? 'video/mp4' : 'image/jpeg',
+      thumbnailDataUrl: m.thumbnailUrl ?? '',
+    };
+  }
+
+  const blob = await fetchBlobFromUrl(m.url);
+  return {
+    ...base,
+    mediaBlob: blob,
+    mimeType: blob.type || (m.type === 'video' ? 'video/mp4' : 'image/jpeg'),
+    thumbnailDataUrl: m.type === 'video' ? (m.thumbnailUrl || '') : await generateThumbnailDataUrl(m.url, 200),
+  };
 }
 
 /**

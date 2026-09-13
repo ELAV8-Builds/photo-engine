@@ -1,9 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MediaFile } from '@/types';
 import { detectFaces } from '@/lib/face-detect';
 import { saveTrimMemory, loadTrimMemory } from '@/lib/trim-memory';
+import LibraryPanel from './LibraryPanel';
 import {
   isHeicFile,
   isDefinitelyHeic,
@@ -11,6 +12,9 @@ import {
   isVideoFile,
   isImageFile,
   isMediaFile,
+  isInsta360VideoFile,
+  fileForBrowser,
+  insta360Label,
 } from '@/lib/heic-convert';
 
 interface MediaStepProps {
@@ -47,7 +51,7 @@ export default function MediaStep({ media, onMediaChange, onNext }: MediaStepPro
 
     for (let i = 0; i < mediaFiles.length; i++) {
       setProcessingPercent(Math.round(((i) / mediaFiles.length) * 100));
-      const file = mediaFiles[i];
+      const file = fileForBrowser(mediaFiles[i]);
 
       if (isVideoFile(file)) {
         // --- Video processing ---
@@ -89,6 +93,15 @@ export default function MediaStep({ media, onMediaChange, onNext }: MediaStepPro
             thumbnailUrl: videoInfo.thumbnailUrl,
           });
         } catch {
+          if (isInsta360VideoFile(file)) {
+            URL.revokeObjectURL(url);
+            newFailed.push({
+              file,
+              error: 'Browser could not decode this Insta360 clip (often HEVC). Try Safari, or export an MP4 from Insta360 Studio.',
+            });
+            continue;
+          }
+
           // Fallback if video metadata extraction fails
           const savedTrimFallback = await loadTrimMemory(file.name, file.size).catch(() => null);
 
@@ -226,6 +239,20 @@ export default function MediaStep({ media, onMediaChange, onNext }: MediaStepPro
   const facesDetected = media.reduce((sum, m) => sum + (m.selected ? m.faces.length : 0), 0);
   const videoCount = media.filter(m => m.type === 'video').length;
 
+  // Library items already in the project, so the panel can grey them out.
+  const libraryIdsInProject = useMemo(
+    () => new Set(media.map(m => m.libraryItemId).filter((id): id is string => !!id)),
+    [media],
+  );
+
+  const addLibraryMedia = useCallback((items: MediaFile[]) => {
+    const existingCount = media.length;
+    const fresh = items
+      .filter(item => !item.libraryItemId || !libraryIdsInProject.has(item.libraryItemId))
+      .map((item, i) => ({ ...item, order: existingCount + i }));
+    if (fresh.length > 0) onMediaChange([...media, ...fresh]);
+  }, [media, libraryIdsInProject, onMediaChange]);
+
   return (
     <div className="space-y-6 step-content">
       {/* Upload Area */}
@@ -246,7 +273,7 @@ export default function MediaStep({ media, onMediaChange, onNext }: MediaStepPro
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*,video/*,.heic,.heif"
+          accept="image/*,video/*,.heic,.heif,.insv,.insp,.lrv,.irv"
           multiple
           onChange={(e) => e.target.files && processFiles(e.target.files)}
           className="hidden"
@@ -266,7 +293,7 @@ export default function MediaStep({ media, onMediaChange, onNext }: MediaStepPro
               {processing ? processingMessage || 'Processing media...' : 'Drop photos & videos here or click to browse'}
             </p>
             <p className="text-text-muted text-sm mt-1">
-              JPG, PNG, HEIC, MP4, MOV, WebM — Face detection runs on photos
+              JPG, PNG, HEIC, INSP, MP4, MOV, WebM, INSV, LRV — Face detection runs on photos
             </p>
           </div>
           {processing && (
@@ -280,6 +307,9 @@ export default function MediaStep({ media, onMediaChange, onNext }: MediaStepPro
         </div>
       </div>
 
+      {/* Library folders (server-indexed, stays local) */}
+      <LibraryPanel inProjectIds={libraryIdsInProject} onAddMedia={addLibraryMedia} />
+
       {/* Failed Files Banner */}
       {failedFiles.length > 0 && (
         <div className="card-glow border-red-500/30 bg-red-500/5 p-4">
@@ -291,7 +321,7 @@ export default function MediaStep({ media, onMediaChange, onNext }: MediaStepPro
                 <line x1="9" y1="9" x2="15" y2="15" />
               </svg>
               <p className="text-sm text-red-400 font-medium">
-                {failedFiles.length} file{failedFiles.length !== 1 ? 's' : ''} failed to convert
+                {failedFiles.length} file{failedFiles.length !== 1 ? 's' : ''} failed to import
               </p>
             </div>
             <div className="flex gap-2">
@@ -359,7 +389,7 @@ export default function MediaStep({ media, onMediaChange, onNext }: MediaStepPro
               <div key={item.id} className="relative group">
                 {/* Thumbnail */}
                 <img
-                  src={item.type === 'video' && item.thumbnailUrl ? item.thumbnailUrl : item.url}
+                  src={item.thumbnailUrl ?? item.url}
                   alt={item.name}
                   onClick={() => toggleSelect(item.id)}
                   className={`photo-thumb w-full ${item.selected ? 'selected' : 'opacity-50'}`}
@@ -411,10 +441,19 @@ export default function MediaStep({ media, onMediaChange, onNext }: MediaStepPro
                   </span>
                 )}
 
+                {/* Insta360 container badge */}
+                {insta360Label(item.name) && (
+                  <span className="absolute top-1 left-1 bg-black/75 text-accent-gold text-[8px] font-bold px-1.5 py-0.5 rounded">
+                    {insta360Label(item.name)}
+                  </span>
+                )}
+
                 {/* Face indicator (photos and videos) */}
                 {item.faces.length > 0 && (
                   <span
-                    className="absolute top-1 left-1 bg-accent-gold/90 text-bg-main text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+                    className={`absolute top-1 bg-accent-gold/90 text-bg-main text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                      insta360Label(item.name) ? 'left-12' : 'left-1'
+                    }`}
                     title={`${item.faces.length} face(s) detected`}
                   >
                     {item.faces.length}F

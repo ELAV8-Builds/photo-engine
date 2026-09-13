@@ -1,6 +1,10 @@
 export interface MediaFile {
   id: string;
-  file: File;
+  /**
+   * The dropped-in File for uploads. Absent for library-backed items, which the
+   * local server streams from disk via `url` instead.
+   */
+  file?: File;
   url: string;
   name: string;
   width: number;
@@ -13,6 +17,12 @@ export interface MediaFile {
   trimStart?: number;
   trimEnd?: number;
   thumbnailUrl?: string;
+  /** Set when the item comes from a scanned library folder (server-backed). */
+  libraryItemId?: string;
+  /** 360° source (e.g. Insta360); `url` then points at the flat preview proxy. */
+  is360?: boolean;
+  /** Best-effort capture time (epoch ms) for chronological ordering. */
+  capturedAt?: number;
 }
 
 export type PhotoFile = MediaFile;

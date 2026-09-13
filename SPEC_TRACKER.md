@@ -1,5 +1,18 @@
 # PhotoForge v4.1 — Spec Tracker
 
+## Library & Local AI Curation — Phase 1 ✅ COMPLETE (see docs/handoff/PHASE-2.md)
+| # | Feature | Status | Notes |
+|---|---------|--------|-------|
+| L1.1 | Library folders (server-indexed, localhost-only API) | ✅ DONE | `src/server/**`, native macOS folder picker, id-addressed media, Range streaming |
+| L1.2 | Background job queue (lanes, nice, pause/resume, crash recovery) | ✅ DONE | `src/server/jobs/*`; durable state is the item index; stale temp sweep at boot |
+| L1.3 | Insta360 360° → flat preview proxies (ffmpeg v360) | ✅ DONE | `src/server/media/reframe.ts`; LRV-based, 40× realtime |
+| L1.4 | Stage-1 signals + deterministic technical gate | ✅ DONE | `src/server/analysis/*`; brightness/motion/sharpness/audio per second |
+| L1.5 | LibraryPanel UI + add-to-project + project save by reference | ✅ DONE | `MediaFile.file` optional; `libraryItemId` |
+| L2 | Local VLM curation (Ollama qwen3.5:9b), highlights, auto-pick | ⏳ NEXT | Spec in docs/handoff/PHASE-2.md |
+| L3 | Story layer (titles, chapters, template recommendation) | ⏳ | |
+| L4 | Settings + optional Gemini provider | ⏳ | |
+| L5 | 360 signature moves (AI yaw, virtual pan, tiny planet) | ⏳ | |
+
 ## Phase 1 — Fix Fundamentals ✅ COMPLETE
 | # | Feature | Status | Notes |
 |---|---------|--------|-------|

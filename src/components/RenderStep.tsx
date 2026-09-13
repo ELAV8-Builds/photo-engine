@@ -457,9 +457,11 @@ export default function RenderStep(props: RenderStepProps) {
       }));
 
       for (const media of selectedMedia) {
-        formData.append('media', media.file, media.name);
+        // Library-backed items have no File; the server can read them by id.
+        if (media.file) formData.append('media', media.file, media.name);
         formData.append('mediaMeta', JSON.stringify({
           id: media.id,
+          libraryItemId: media.libraryItemId,
           type: media.type,
           faces: media.faces,
           width: media.width,

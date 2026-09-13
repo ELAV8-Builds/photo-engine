@@ -325,15 +325,51 @@ export async function convertHeicToJpeg(file: File): Promise<HeicConversionResul
 // Other media type checks
 // ---------------------------------------------------------------------------
 
+const INSTA360_VIDEO_EXT = /\.(insv|lrv|irv)$/i;
+const INSTA360_PHOTO_EXT = /\.insp$/i;
+
+/** Insta360 video: INSV (full clip), LRV (low-res preview). IRV accepted as an alias. */
+export function isInsta360VideoFile(file: File): boolean {
+  return INSTA360_VIDEO_EXT.test(file.name);
+}
+
+/** Insta360 still: INSP is a JPEG with an Insta360 metadata trailer. */
+export function isInsta360PhotoFile(file: File): boolean {
+  return INSTA360_PHOTO_EXT.test(file.name);
+}
+
+export function insta360Label(fileName: string): string | null {
+  const name = fileName.toLowerCase();
+  if (name.endsWith('.insv')) return 'INSV';
+  if (name.endsWith('.lrv')) return 'LRV';
+  if (name.endsWith('.irv')) return 'IRV';
+  if (name.endsWith('.insp')) return 'INSP';
+  return null;
+}
+
+/**
+ * Browsers refuse .insv/.lrv/.insp when the File MIME is empty.
+ * The bytes are MP4 / JPEG — stamp a type the decoder accepts.
+ */
+export function fileForBrowser(file: File): File {
+  if (isInsta360VideoFile(file) && !file.type.startsWith('video/')) {
+    return new File([file], file.name, { type: 'video/mp4' });
+  }
+  if (isInsta360PhotoFile(file) && !file.type.startsWith('image/')) {
+    return new File([file], file.name, { type: 'image/jpeg' });
+  }
+  return file;
+}
+
 export function isVideoFile(file: File): boolean {
   return (
     file.type.startsWith('video/') ||
-    /\.(mp4|mov|webm|avi|mkv|m4v)$/i.test(file.name)
+    /\.(mp4|mov|webm|avi|mkv|m4v|insv|lrv|irv)$/i.test(file.name)
   );
 }
 
 export function isImageFile(file: File): boolean {
-  return file.type.startsWith('image/') || isHeicFile(file);
+  return file.type.startsWith('image/') || isHeicFile(file) || isInsta360PhotoFile(file);
 }
 
 export function isMediaFile(file: File): boolean {
