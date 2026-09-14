@@ -75,25 +75,48 @@ export function getVideoElement(media: MediaFile): Promise<HTMLVideoElement> {
 }
 
 const VIDEO_LOAD_TIMEOUT_MS = 20_000;
+/** A localhost Range seek completes in well under a second; anything past this is a stall, not a slow disk. */
+export const SEEK_TIMEOUT_MS = 10_000;
 
 /**
  * Seek a video element to a specific time and wait for the frame to be available.
  * Returns a promise that resolves when the frame is ready to draw.
+ *
+ * Phase 6: bounded. A seek whose `seeked` never fires (evicted element, dead
+ * decoder, competing seeks) rejects after `timeoutMs` — as does a media error —
+ * so an export fails visibly instead of hanging on one frame.
  */
-export function seekToTime(video: HTMLVideoElement, time: number): Promise<void> {
-  return new Promise((resolve) => {
+export function seekToTime(video: HTMLVideoElement, time: number, timeoutMs = SEEK_TIMEOUT_MS): Promise<void> {
+  return new Promise((resolve, reject) => {
     // If we're already at this time (within a frame), resolve immediately
     if (Math.abs(video.currentTime - time) < 0.02) {
       resolve();
       return;
     }
 
-    const onSeeked = () => {
+    const cleanup = () => {
       video.removeEventListener('seeked', onSeeked);
+      video.removeEventListener('error', onError);
+      clearTimeout(timer);
+    };
+
+    const onSeeked = () => {
+      cleanup();
       resolve();
     };
 
+    const onError = () => {
+      cleanup();
+      reject(new Error(`The video failed while seeking to ${time.toFixed(2)} s`));
+    };
+
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error(`No video frame arrived at ${time.toFixed(2)} s within ${Math.round(timeoutMs / 1000)} s — the browser stalled on this clip. Try the export again.`));
+    }, timeoutMs);
+
     video.addEventListener('seeked', onSeeked);
+    video.addEventListener('error', onError);
     video.currentTime = time;
   });
 }

@@ -17,6 +17,7 @@ import {
   saveProviderSettings,
   type AiProviderSettings,
 } from '@/lib/provider-settings';
+import StorageCard from '@/components/StorageCard';
 
 const PROFILES: Array<{ id: PerformanceProfile; label: string; detail: string }> = [
   { id: 'quiet', label: 'Quiet', detail: 'nice 19 · 2 threads · slowest import, invisible footprint' },
@@ -58,10 +59,11 @@ export default function SettingsPage() {
     };
   }, []);
 
-  const flash = (msg: string) => {
+  const flash = useCallback((msg: string) => {
     setNotice(msg);
     setError(null);
-  };
+  }, []);
+  const flashError = useCallback((msg: string) => setError(msg), []);
 
   const updateServer = useCallback(async (patch: Partial<ServerSettings>, kind: 'profile' | 'model') => {
     setSaving(kind);
@@ -365,6 +367,9 @@ export default function SettingsPage() {
             )}
           </div>
         </section>
+
+        {/* Storage (Phase 6) */}
+        <StorageCard appDataDir={caps?.appDataDir} onNotice={flash} onError={flashError} />
       </main>
 
       <footer className="border-t border-border-subtle py-4">

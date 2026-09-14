@@ -244,6 +244,42 @@ export interface PhotosLibraryInfo {
 }
 
 // ---------------------------------------------------------------------------
+// Storage (Phase 6)
+// ---------------------------------------------------------------------------
+
+/**
+ * thumbnails     — grid thumbnails and per-moment thumbnails
+ * renditions     — resized photo copies for the renderer
+ * previews360    — flat 720p browser previews of whole 360 videos
+ * highlightClips — flat, panning and tiny-planet clips per moment
+ * viewFrames     — cached yaw-editor preview frames
+ * analysis       — Stage-1 signals, curation records, partial grades, remembered views
+ * storyPlans     — cached story plans per shot list
+ */
+export type ArtifactClass = 'thumbnails' | 'renditions' | 'previews360' | 'highlightClips' | 'viewFrames' | 'analysis' | 'storyPlans';
+
+export interface StorageClassReport {
+  class: ArtifactClass;
+  files: number;
+  bytes: number;
+  /** Artefacts whose item, moment or shot list no longer exists. */
+  orphanFiles: number;
+  orphanBytes: number;
+}
+
+export interface StorageReport {
+  scannedAt: number;
+  classes: StorageClassReport[];
+  totalFiles: number;
+  totalBytes: number;
+  orphanFiles: number;
+  orphanBytes: number;
+  /** Cache files matching no known naming pattern; reported, never deleted. */
+  unrecognisedFiles: number;
+  unrecognisedBytes: number;
+}
+
+// ---------------------------------------------------------------------------
 // Stage-2 curation (local vision model)
 // ---------------------------------------------------------------------------
 

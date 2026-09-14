@@ -14,16 +14,18 @@ import { startThermalWatchdog } from '../jobs/thermal';
 import { hasModel, ollamaHealth, OllamaUnavailableError } from '../ai/ollama';
 import { getSettings } from '../settings/store';
 import { loadCuration, removeCuration, removeHighlightArtifacts, saveCuration } from '../curation/record';
+import { rememberUserView, rememberUserViewsFrom } from '../curation/user-views';
 import { selectForMontage, type SelectOptions } from '../curation/select';
 import { buildStoryContext, defaultKeys, type ContextSource } from '../story/context';
 import { generateStoryPlan, loadStoryPlan, saveStoryPlan } from '../story/generate';
 import { heuristicStoryPlan } from '../story/heuristic';
 import { createProvider } from '../ai';
 import type { ProviderChoice } from '../ai/provider';
+import { clearOrphans, readStorageReport, type ClearResult } from '../storage/gc';
 import { addRoot, getRoot, listRoots, removeRoot } from './registry';
 import { dropRootIndex, findItem, getItemsForRoot, patchItem, toDto, type IndexedItem } from './index-store';
 import { enqueueItemWork, planItemJobs } from './work';
-import type { CurationRecord, LibraryItem, LibraryItemsPage, LibraryRoot, MediaKind, MontagePick, StoryPlan } from '@/types/library';
+import type { CurationRecord, LibraryItem, LibraryItemsPage, LibraryRoot, MediaKind, MontagePick, StorageReport, StoryPlan } from '@/types/library';
 
 assertServer();
 
@@ -201,8 +203,12 @@ export async function analyseItems(opts: AnalyseOptions = {}): Promise<{ enqueue
         continue;
       }
       if (opts.force) {
+        // Phase 6: hand-set views outlive the record they were chosen in.
+        const previous = await loadCuration(item.id);
+        if (previous) await rememberUserViewsFrom(previous);
         await removeCuration(item.id);
-        cancelWhere((j) => j.itemId === item.id && (j.type === 'curate' || j.type === 'highlights'));
+        // A stale pan360 job would find no record and mark pan 'skipped' for good.
+        cancelWhere((j) => j.itemId === item.id && (j.type === 'curate' || j.type === 'highlights' || j.type === 'pan360'));
       }
       const patched = await patchItem(root.id, item.id, {
         curation: undefined,
@@ -244,6 +250,7 @@ export async function setHighlightView(
 
   cancelWhere((j) => j.itemId === item.id && (j.type === 'highlights' || j.type === 'pan360'));
   h.view = { ...view, source: 'user', version: (h.view?.version ?? 0) + 1 };
+  await rememberUserView(item.id, { start: h.start, end: h.end, view: h.view });
   // A hand-set view is static: no pan; the planet clip does not depend on the view.
   h.viewPath = [{ t: h.start, yawDeg: view.yawDeg, pitchDeg: view.pitchDeg }];
   h.panProxy = undefined;
@@ -322,6 +329,21 @@ export async function planStory(opts: StoryOptions = {}): Promise<{ plan: StoryP
   if (!modelReady) log.info('story: model unavailable, heuristic plan', { shots: ctx.entries.length });
   await saveStoryPlan(plan);
   return { plan, cached: false };
+}
+
+// ---------------------------------------------------------------------------
+// Storage (Phase 6)
+// ---------------------------------------------------------------------------
+
+/** Cache inventory by artefact class, with what is orphaned. Needs the indexes loaded, hence the bootstrap. */
+export async function storageReport(): Promise<StorageReport> {
+  await ensureBootstrapped();
+  return readStorageReport();
+}
+
+export async function clearOrphanedArtifacts(): Promise<ClearResult> {
+  await ensureBootstrapped();
+  return clearOrphans();
 }
 
 /** Prove a cloud key works with one tiny call. Throws ProviderUnavailableError (→ 503) when it does not. */

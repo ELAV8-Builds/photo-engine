@@ -28,6 +28,7 @@ import { hasModel, ollamaHealth, OllamaUnavailableError } from '../ai/ollama';
 import { createProviderForKind } from '../ai';
 import { ProviderUnavailableError, type VisionProvider } from '../ai/provider';
 import { highlightPanPath, highlightPlanetPath, highlightProxyPath, loadCuration, saveCuration, summarize } from '../curation/record';
+import { applyRememberedViews, loadUserViews } from '../curation/user-views';
 import { planViewPaths } from '../analysis/pan-plan';
 import { renderPanProxy, renderTinyPlanetProxy } from '../media/pan';
 import { cancelWhere, registerHandler, type JobContext } from './queue';
@@ -250,6 +251,12 @@ async function handleCurate(job: JobInfo, ctx: JobContext): Promise<void> {
         threads: budget.threads,
         onProgress: ctx.report,
       });
+      // Phase 6: windows overlapping a moment the user reframed keep that view.
+      const remembered = await loadUserViews(item.id);
+      if (remembered.length > 0) {
+        const restored = applyRememberedViews(record.highlights, remembered);
+        log.info('user views restored', { item: item.name, remembered: remembered.length, restored });
+      }
     }
     await saveCuration(record);
     const needsProxies = record.highlights.some((h) => h.proxy === 'pending');

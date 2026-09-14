@@ -18,6 +18,7 @@ import type {
   MontagePick,
   QueueSnapshot,
   ServerSettings,
+  StorageReport,
   StoryPlan,
   SystemCapabilities,
 } from '@/types/library';
@@ -109,6 +110,15 @@ export const libraryApi = {
     request<{ highlight: HighlightWindow }>(`/api/library/items/${encodeURIComponent(itemId)}/highlights/${index}/view`, {
       method: 'PUT',
       body: JSON.stringify(view),
+    }),
+
+  /** Phase 6: cache inventory by artefact class, including orphans (items, moments or shot lists that no longer exist). */
+  storage: () => request<StorageReport>('/api/system/storage'),
+  /** Phase 6: delete every orphaned artefact; returns what was removed and the fresh inventory. */
+  clearOrphans: () =>
+    request<{ removedFiles: number; removedBytes: number; report: StorageReport }>('/api/system/storage', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'clear-orphans' }),
     }),
 };
 

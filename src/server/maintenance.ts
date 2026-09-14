@@ -16,7 +16,8 @@ assertServer();
 
 const log = createLogger('maintenance');
 
-const TEMP_WITH_PID = /\.(\d+)\.tmp(\.[a-z0-9]+)?$/i;
+/** `<final>.<pid>.tmp[.ext]` — the in-progress sibling every atomic write uses. */
+export const TEMP_WITH_PID = /\.(\d+)\.tmp(\.[a-z0-9]+)?$/i;
 
 function processAlive(pid: number): boolean {
   if (pid === process.pid) return true;

@@ -5,6 +5,7 @@
  */
 
 import fsp from 'fs/promises';
+import path from 'path';
 import { assertServer, dataPath, fileExists, writeJsonAtomic } from '../runtime';
 import { highlightThumbPath } from '../media/thumbnails';
 import type { CurationRecord, CurationSummary, FrameGrade } from '@/types/library';
@@ -67,14 +68,35 @@ export async function saveCuration(record: CurationRecord): Promise<void> {
 const MAX_HIGHLIGHTS = 8;
 
 /**
+ * Phase 6: drop every cached yaw-editor frame of an item. They are rendered at
+ * a window's `sampleT` but named only by window index, so after a re-curation
+ * they would preview the wrong moment.
+ */
+export async function removeViewFrames(itemId: string): Promise<number> {
+  const dir = dataPath('thumbs');
+  let names: string[];
+  try {
+    names = await fsp.readdir(dir);
+  } catch {
+    return 0;
+  }
+  const prefix = `${itemId}-hl-`;
+  const mine = names.filter((n) => n.startsWith(prefix) && n.includes('-view-'));
+  await Promise.all(mine.map((n) => fsp.rm(path.join(dir, n), { force: true })));
+  return mine.length;
+}
+
+/**
  * Forget an item's curation entirely: record, partial grades, and every rendered
- * highlight clip/thumbnail. A re-run chooses new windows under the same
- * filenames, so stale clips must not survive to be mistaken for finished work.
+ * highlight clip/thumbnail/preview frame. A re-run chooses new windows under the
+ * same filenames, so stale artefacts must not survive to be mistaken for finished
+ * work. Remembered user views (`user-views.ts`) are deliberately kept.
  */
 export async function removeCuration(itemId: string): Promise<void> {
   await fsp.rm(curationPath(itemId), { force: true });
   await fsp.rm(curationPartialPath(itemId), { force: true });
   for (let n = 0; n < MAX_HIGHLIGHTS; n++) await removeHighlightArtifacts(itemId, n);
+  await removeViewFrames(itemId);
 }
 
 /** Grades keyed by sample time (string seconds) for one model. */

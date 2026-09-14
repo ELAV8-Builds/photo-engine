@@ -368,9 +368,9 @@ export default function RenderStep(props: RenderStepProps) {
       if (media.type === 'video') {
         // Load real video element for video-type media
         getVideoElement(media).then((video) => {
-          // Seek to trim start
+          // Seek to trim start (returned so a bounded-seek rejection reaches the fallback below)
           const startTime = media.trimStart ?? 0;
-          seekToTime(video, startTime).then(() => {
+          return seekToTime(video, startTime).then(() => {
             imageMap.set(i, video);
             imagesLoaded++;
             if (imagesLoaded >= 1 && !cleanupAnim) {

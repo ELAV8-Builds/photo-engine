@@ -1,5 +1,8 @@
 # PhotoForge — Library & Local AI Curation: phases 1–5 complete
 
+> Phase 6 (cache GC, bounded export waits, user views across re-analysis) shipped afterwards; the current
+> single source of truth is `docs/handoff/PHASE-7.md`. This file remains the record of phases 1–5.
+
 This is the closing handoff for the five-phase build (`docs/handoff/PHASE-2.md` … `PHASE-5.md` hold the
 per-phase specs and verified numbers). It records what shipped in Phase 5, what was measured, what is known
 to be missing or unverified, and what a future window should do first.

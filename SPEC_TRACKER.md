@@ -24,7 +24,15 @@
 | L5.1 | AI-directed yaw pan: `pan360` job plans start→peak→end view paths; `sendcmd` delta renders | ✅ DONE | `src/server/analysis/pan-plan.ts`, `src/server/media/pan.ts`; 27/51 windows pan on the card |
 | L5.2 | Tiny-planet clips per highlight + `reframe: 'tiny-planet'` slots + story `planet` role | ✅ DONE | `renderTinyPlanetProxy`; Cinematic Journey closer / Summer Vibes opener; `RenderStep.mediaForSlot` |
 | L5.3 | Per-highlight yaw editing (ReframePanel, frame preview, PUT view → re-render, versioned URLs) | ✅ DONE | 6 s round-trip verified; user views survive `pan360` |
-| L5.4 | `.insp` 360 photo reframing (equirect thumb, flat rendition) gated on 2:1 aspect | ⚠️ BUILT, UNVERIFIED | no `.insp` sample on the card |
+| L5.4 | `.insp` 360 photo reframing (equirect thumb, flat rendition) gated on 2:1 aspect | ✅ DONE (synthetic file) | Phase 6: verified with a dual-fisheye JPEG cut from an `.lrv`; a real X5 `.insp` is still unverified |
+
+## Library & Local AI Curation — Phase 6 ✅ COMPLETE (see docs/handoff/PHASE-7.md)
+| # | Feature | Status | Notes |
+|---|---------|--------|-------|
+| L6.1 | Cache GC (inventory by artefact class, orphan rules, clear) + Settings "Storage" card | ✅ DONE | `src/server/storage/gc.ts`, `GET|POST /api/system/storage`, `StorageCard.tsx`; 3/3 real orphans cleared, live artefacts untouched; QA 375/768/1280 |
+| L6.2 | Bounded waits in `seekToTime` (10 s, media error) and `writeFrame` (20 s) with a visible error | ✅ DONE | export completes (147 s, 8 slots); a stalled seek fails visibly after 10 s instead of hanging |
+| L6.3 | User views survive forced re-analysis (per-item memory, matched on time overlap) | ✅ DONE | `src/server/curation/user-views.ts`; 3/3 restored on the whole-card forced run; force also cancels stale `pan360` |
+| L6.4 | Verify Gemini / `.insp` / Photos library | ⚠️ PARTIAL | `.insp` verified synthetically; Gemini needs a real key in Settings; Photos needs Full Disk Access |
 
 ## Phase 1 — Fix Fundamentals ✅ COMPLETE
 | # | Feature | Status | Notes |

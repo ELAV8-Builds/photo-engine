@@ -67,9 +67,25 @@ export async function initFFmpeg(
   return ffmpegInstance!;
 }
 
+/** A 4K JPEG capture plus a worker write takes tens of milliseconds; a wait this long means the worker is gone. */
+export const FRAME_WRITE_TIMEOUT_MS = 20_000;
+
+/**
+ * Phase 6: reject when `promise` has not settled within `ms`, so a dead
+ * ffmpeg worker or a stuck canvas surfaces as an error instead of a silent hang.
+ */
+export function withTimeout<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${what} did not finish within ${Math.round(ms / 1000)} s`)), ms);
+  });
+  return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
+}
+
 /**
  * Capture a canvas frame as JPEG and write it to ffmpeg's virtual filesystem.
  * Uses JPEG instead of PNG for ~5x smaller files and faster encoding.
+ * Both waits are bounded (see FRAME_WRITE_TIMEOUT_MS).
  */
 export async function writeFrame(
   ffmpeg: FFmpeg,
@@ -80,16 +96,20 @@ export async function writeFrame(
   const fileName = `frame_${String(frameNumber).padStart(6, '0')}.jpg`;
 
   // Canvas → Blob → Uint8Array
-  const blob = await new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob(
-      (b) => (b ? resolve(b) : reject(new Error('Canvas toBlob failed'))),
-      'image/jpeg',
-      quality,
-    );
-  });
+  const blob = await withTimeout(
+    new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error('Canvas toBlob failed'))),
+        'image/jpeg',
+        quality,
+      );
+    }),
+    FRAME_WRITE_TIMEOUT_MS,
+    `Capturing frame ${frameNumber}`,
+  );
 
   const buffer = new Uint8Array(await blob.arrayBuffer());
-  await ffmpeg.writeFile(fileName, buffer);
+  await withTimeout(ffmpeg.writeFile(fileName, buffer), FRAME_WRITE_TIMEOUT_MS, `Writing frame ${frameNumber} to the encoder`);
 }
 
 /**
