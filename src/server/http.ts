@@ -11,7 +11,7 @@ import { assertServer } from './runtime';
 import { createLogger, errorMessage } from './log';
 import { PathEscapeError } from './fs/safe-path';
 import { ProcessError } from './media/ffmpeg';
-import { OllamaUnavailableError } from './ai/ollama';
+import { ProviderUnavailableError } from './ai/provider';
 
 assertServer();
 
@@ -46,7 +46,7 @@ export function handle<Args extends unknown[]>(fn: (...args: Args) => Promise<Re
     } catch (err) {
       if (err instanceof HttpError) return fail(err.status, err.message);
       if (err instanceof PathEscapeError) return fail(403, err.message);
-      if (err instanceof OllamaUnavailableError) return fail(503, err.message);
+      if (err instanceof ProviderUnavailableError) return fail(503, err.message);
       if (err instanceof ProcessError) {
         log.error('tool failure', { message: err.message });
         return fail(500, err.message);

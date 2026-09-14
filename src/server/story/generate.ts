@@ -8,8 +8,7 @@ import crypto from 'crypto';
 import fsp from 'fs/promises';
 import { assertServer, dataPath, fileExists, writeJsonAtomic } from '../runtime';
 import { createLogger } from '../log';
-import { InvalidModelOutputError, type VisionProvider } from '../ai/provider';
-import { OllamaUnavailableError } from '../ai/ollama';
+import { InvalidModelOutputError, ProviderUnavailableError, type VisionProvider } from '../ai/provider';
 import { heuristicStoryPlan } from './heuristic';
 import { InvalidStoryError, STORY_LIMITS, STORY_TEMPLATE_STYLES, validateStoryPlan } from './validate';
 import type { StoryContext, StoryPlan, StoryTemplateStyle } from '@/types/library';
@@ -112,7 +111,7 @@ export async function generateStoryPlan(ctx: StoryContext, opts: GenerateOptions
       log.info('story from model', { title: plan.title, template: plan.templateStyle, chapters: plan.chapters.length });
       return plan;
     } catch (err) {
-      if (err instanceof OllamaUnavailableError) {
+      if (err instanceof ProviderUnavailableError) {
         log.warn('model unavailable; using heuristic story', { error: err.message });
         break;
       }

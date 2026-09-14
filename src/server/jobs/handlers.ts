@@ -24,7 +24,9 @@ import { generateThumbnail, imageDimensions, proxyPath, thumbPath } from '../med
 import { renderFlatProxy } from '../media/reframe';
 import { extractSignals, loadSignals } from '../analysis/signals';
 import { curatePhoto, curateVideo } from '../analysis/highlights';
-import { createOllamaProvider, hasModel, ollamaHealth, OllamaUnavailableError } from '../ai/ollama';
+import { hasModel, ollamaHealth, OllamaUnavailableError } from '../ai/ollama';
+import { createProviderForKind } from '../ai';
+import { ProviderUnavailableError, type VisionProvider } from '../ai/provider';
 import { highlightProxyPath, loadCuration, saveCuration, summarize } from '../curation/record';
 import { cancelWhere, registerHandler, type JobContext } from './queue';
 import type { CurationRecord, JobInfo } from '@/types/library';
@@ -204,19 +206,31 @@ async function handleCurate(job: JobInfo, ctx: JobContext): Promise<void> {
   const tmpDir = dataPath('tmp', job.id);
 
   // A dead model server must not turn 40 queued items into 40 failures: drop
-  // the rest of the lane and leave everything pending for the next attempt.
-  const health = await ollamaHealth();
-  if (!health.running || !hasModel(health.models, settings.visionModel)) {
-    const reason = !health.running
-      ? 'Ollama is not running (start Ollama, then Analyse again)'
-      : `Model "${settings.visionModel}" is not pulled (ollama pull ${settings.visionModel})`;
-    cancelWhere((j) => j.type === 'curate' && j.id !== job.id);
+  // the rest of the lane (same backend) and leave everything pending for the next attempt.
+  const sameBackend = (j: JobInfo) => j.type === 'curate' && j.id !== job.id && (j.provider ?? 'local') === (job.provider ?? 'local');
+  if ((job.provider ?? 'local') === 'local') {
+    const health = await ollamaHealth();
+    if (!health.running || !hasModel(health.models, settings.visionModel)) {
+      const reason = !health.running
+        ? 'Ollama is not running (start Ollama, then Analyse again)'
+        : `Model "${settings.visionModel}" is not pulled (ollama pull ${settings.visionModel})`;
+      cancelWhere(sameBackend);
+      await setStep(item.rootId, item.id, 'curate', 'pending');
+      throw new OllamaUnavailableError(reason);
+    }
+  }
+
+  let provider: VisionProvider;
+  try {
+    provider = createProviderForKind(job.provider, settings.visionModel);
+  } catch (err) {
+    // Cloud session gone: nothing to grade with; keep the whole batch pending.
+    cancelWhere(sameBackend);
     await setStep(item.rootId, item.id, 'curate', 'pending');
-    throw new OllamaUnavailableError(reason);
+    throw err;
   }
 
   await setStep(item.rootId, item.id, 'curate', 'processing');
-  const provider = createOllamaProvider(settings.visionModel);
   try {
     let record: CurationRecord;
     if (item.kind === 'photo') {
@@ -243,9 +257,9 @@ async function handleCurate(job: JobInfo, ctx: JobContext): Promise<void> {
     });
   } catch (err) {
     // Cancelled or model gone: stay pending so a later run resumes from the partial file.
-    const transient = ctx.signal.aborted || err instanceof OllamaUnavailableError;
+    const transient = ctx.signal.aborted || err instanceof ProviderUnavailableError;
     await setStep(item.rootId, item.id, 'curate', transient ? 'pending' : 'failed', errorMessage(err));
-    if (err instanceof OllamaUnavailableError) cancelWhere((j) => j.type === 'curate' && j.id !== job.id);
+    if (err instanceof ProviderUnavailableError) cancelWhere(sameBackend);
     throw err;
   } finally {
     await fsp.rm(tmpDir, { recursive: true, force: true });

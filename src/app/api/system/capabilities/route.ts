@@ -4,6 +4,7 @@ import { ffmpegVersion, hasVideoToolbox } from '@/server/media/ffmpeg';
 import { hasModel, ollamaHealth } from '@/server/ai/ollama';
 import { getSettings } from '@/server/settings/store';
 import { detectPhotosLibrary } from '@/server/photos/library';
+import { describeCloudSession } from '@/server/ai/session';
 import { getRoots } from '@/server/library/service';
 import { appDataDir } from '@/server/runtime';
 import type { PhotosLibraryInfo, SystemCapabilities } from '@/types/library';
@@ -49,6 +50,7 @@ export const GET = handle(async () => {
       modelAvailable: ollama.running && hasModel(ollama.models, settings.visionModel),
     },
     photosLibrary,
+    cloudSession: describeCloudSession(),
   };
   return json(caps);
 });

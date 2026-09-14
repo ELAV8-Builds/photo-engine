@@ -18,7 +18,8 @@ import { selectForMontage, type SelectOptions } from '../curation/select';
 import { buildStoryContext, defaultKeys, type ContextSource } from '../story/context';
 import { generateStoryPlan, loadStoryPlan, saveStoryPlan } from '../story/generate';
 import { heuristicStoryPlan } from '../story/heuristic';
-import { createOllamaProvider } from '../ai/ollama';
+import { createProvider } from '../ai';
+import type { ProviderChoice } from '../ai/provider';
 import { addRoot, getRoot, listRoots, removeRoot } from './registry';
 import { dropRootIndex, findItem, getItemsForRoot, patchItem, toDto, type IndexedItem } from './index-store';
 import { enqueueItemWork, planItemJobs } from './work';
@@ -170,6 +171,8 @@ export interface AnalyseOptions {
   itemIds?: string[];
   /** Discard existing records and grade again. */
   force?: boolean;
+  /** Backend for the queued grading (Phase 4). Defaults to local. */
+  provider?: ProviderChoice;
 }
 
 /**
@@ -179,7 +182,8 @@ export interface AnalyseOptions {
  */
 export async function analyseItems(opts: AnalyseOptions = {}): Promise<{ enqueued: number; skipped: number }> {
   await ensureBootstrapped();
-  await requireVisionModel();
+  const kind = opts.provider?.kind ?? 'local';
+  if (kind === 'local') await requireVisionModel();
 
   const wanted = opts.itemIds ? new Set(opts.itemIds) : null;
   let enqueued = 0;
@@ -204,7 +208,7 @@ export async function analyseItems(opts: AnalyseOptions = {}): Promise<{ enqueue
         curation: undefined,
         status: { ...item.status, curate: 'pending', highlights: item.kind === 'video' && item.is360 ? 'pending' : 'skipped' },
       });
-      if (patched) enqueued += enqueueItemWork(patched);
+      if (patched) enqueued += enqueueItemWork(patched, { provider: kind });
     }
   }
   return { enqueued, skipped };
@@ -251,12 +255,14 @@ export interface StoryOptions {
   keys?: string[];
   /** Ignore the cached plan for this shot list. */
   force?: boolean;
+  /** Backend for the model pass (Phase 4). Defaults to local. */
+  provider?: ProviderChoice;
 }
 
 /**
- * Story plan for a shot list: cached per list, model-written when Ollama is
- * up, heuristic otherwise. Runs under the shared inference lock so it
- * interleaves with (never overlaps) background grading.
+ * Story plan for a shot list: cached per list, model-written when the chosen
+ * backend is available, heuristic otherwise. Runs under the shared inference
+ * lock so it interleaves with (never overlaps) background grading.
  */
 export async function planStory(opts: StoryOptions = {}): Promise<{ plan: StoryPlan; cached: boolean }> {
   await ensureBootstrapped();
@@ -270,11 +276,20 @@ export async function planStory(opts: StoryOptions = {}): Promise<{ plan: StoryP
     if (cached) return { plan: cached, cached: true };
   }
 
-  const modelReady = await visionModelReady();
+  const choice: ProviderChoice = opts.provider ?? { kind: 'local' };
+  const modelReady = choice.kind === 'local' ? await visionModelReady() : true;
   const plan = modelReady
-    ? await generateStoryPlan(ctx, { provider: createOllamaProvider((await getSettings()).visionModel) })
+    ? await generateStoryPlan(ctx, { provider: createProvider(choice, (await getSettings()).visionModel) })
     : heuristicStoryPlan(ctx);
   if (!modelReady) log.info('story: model unavailable, heuristic plan', { shots: ctx.entries.length });
   await saveStoryPlan(plan);
   return { plan, cached: false };
+}
+
+/** Prove a cloud key works with one tiny call. Throws ProviderUnavailableError (→ 503) when it does not. */
+export async function testProvider(choice: ProviderChoice): Promise<{ ok: true; provider: string; model: string }> {
+  const provider = createProvider(choice, (await getSettings()).visionModel);
+  if (choice.kind === 'local') await requireVisionModel();
+  else if (provider.ping) await provider.ping(AbortSignal.timeout(30_000));
+  return { ok: true, provider: provider.name, model: provider.model };
 }

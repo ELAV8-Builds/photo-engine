@@ -6,18 +6,20 @@
  * thinking and the content comes back empty), low temperature, `keep_alive`
  * of five minutes so the model unloads itself when curation goes quiet.
  *
- * One inference at a time, process-wide: the job queue already serialises
- * the `model` lane, and the lock here covers ad-hoc calls from API routes so
- * two requests never make Ollama juggle contexts.
+ * One inference at a time, process-wide (shared `withInferenceLock`): the job
+ * queue already serialises the `model` lane, and the lock covers ad-hoc calls
+ * from API routes so two requests never make Ollama juggle contexts.
  */
 
-import { assertServer, globalSingleton } from '../runtime';
+import { assertServer } from '../runtime';
 import { createLogger } from '../log';
 import {
   FRAME_GRADE_PROMPT,
   FRAME_GRADE_RETRY_SUFFIX,
   InvalidModelOutputError,
   parseFrameGrade,
+  ProviderUnavailableError,
+  withInferenceLock,
   type InferenceContext,
   type VisionProvider,
 } from './provider';
@@ -69,28 +71,10 @@ export function hasModel(models: string[], model: string): boolean {
   return models.some((m) => m === want || m === model);
 }
 
-export class OllamaUnavailableError extends Error {
+export class OllamaUnavailableError extends ProviderUnavailableError {
   constructor(message: string) {
     super(message);
     this.name = 'OllamaUnavailableError';
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Inference lock
-// ---------------------------------------------------------------------------
-
-const lockState = globalSingleton('__photoforge_ollama_lock', () => ({ busy: false, waiters: [] as Array<() => void> }));
-
-async function withInferenceLock<T>(fn: () => Promise<T>): Promise<T> {
-  if (lockState.busy) await new Promise<void>((resolve) => lockState.waiters.push(resolve));
-  lockState.busy = true;
-  try {
-    return await fn();
-  } finally {
-    const next = lockState.waiters.shift();
-    if (next) next();
-    else lockState.busy = false;
   }
 }
 

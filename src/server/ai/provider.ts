@@ -10,10 +10,43 @@
  * text and is normalised here before anything downstream sees it.
  */
 
-import { assertServer } from '../runtime';
-import type { FrameGrade, FrameQuality } from '@/types/library';
+import { assertServer, globalSingleton } from '../runtime';
+import type { FrameGrade, FrameQuality, ProviderKind } from '@/types/library';
 
 assertServer();
+
+/** Which backend to use for one request or job; the key is only ever held in memory. */
+export type ProviderChoice = { kind: 'local' } | { kind: 'gemini'; key: string; model?: string };
+
+export function providerKindOf(choice: ProviderChoice): ProviderKind {
+  return choice.kind;
+}
+
+/** The model server is unreachable, rejects the key, or is rate-limited — never the item's fault. */
+export class ProviderUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ProviderUnavailableError';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Inference lock — one model request in flight, process-wide, for every provider
+// ---------------------------------------------------------------------------
+
+const lockState = globalSingleton('__photoforge_inference_lock', () => ({ busy: false, waiters: [] as Array<() => void> }));
+
+export async function withInferenceLock<T>(fn: () => Promise<T>): Promise<T> {
+  if (lockState.busy) await new Promise<void>((resolve) => lockState.waiters.push(resolve));
+  lockState.busy = true;
+  try {
+    return await fn();
+  } finally {
+    const next = lockState.waiters.shift();
+    if (next) next();
+    else lockState.busy = false;
+  }
+}
 
 export interface InferenceContext {
   signal?: AbortSignal;
@@ -30,6 +63,8 @@ export interface VisionProvider {
   describeImage(jpeg: Buffer, ctx?: InferenceContext): Promise<string>;
   /** Text-only structured output; the caller validates the shape. */
   writeJson(prompt: string, ctx?: InferenceContext): Promise<unknown>;
+  /** Cheapest possible round-trip proving the backend and credentials work (cloud providers). */
+  ping?(signal?: AbortSignal): Promise<void>;
 }
 
 /**

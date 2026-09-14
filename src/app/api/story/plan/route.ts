@@ -1,5 +1,6 @@
 import { badRequest, handle, json, readJsonBody } from '@/server/http';
 import { planStory } from '@/server/library/service';
+import { readProviderChoice } from '@/server/ai';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -12,6 +13,7 @@ const KEY_RE = /^[a-f0-9]{20}(#\d{1,2})?$/;
  * Model-written when Ollama is available, otherwise heuristic — always 200 with `plan.source`.
  */
 export const POST = handle(async (req: Request) => {
+  const provider = readProviderChoice(req);
   const body = await readJsonBody(req);
   let keys: string[] | undefined;
   if (body.keys !== undefined) {
@@ -22,5 +24,5 @@ export const POST = handle(async (req: Request) => {
   }
   const force = body.force === undefined ? false : body.force;
   if (typeof force !== 'boolean') throw badRequest('"force" must be a boolean');
-  return json(await planStory({ keys, force }));
+  return json(await planStory({ keys, force, provider }));
 });

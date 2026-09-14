@@ -21,7 +21,7 @@
 import crypto from 'crypto';
 import { assertServer, globalSingleton } from '../runtime';
 import { createLogger, errorMessage } from '../log';
-import type { JobInfo, JobLane, JobState, JobType, QueueSnapshot } from '@/types/library';
+import type { JobInfo, JobLane, JobState, JobType, ProviderKind, QueueSnapshot } from '@/types/library';
 
 assertServer();
 
@@ -89,6 +89,8 @@ export interface EnqueueOptions {
   priority: number;
   itemId?: string;
   rootId?: string;
+  /** Model-lane jobs: which backend grades. Defaults to local. */
+  provider?: ProviderKind;
 }
 
 function dedupKey(j: Pick<JobInfo, 'type' | 'itemId' | 'rootId'>): string {
@@ -108,6 +110,7 @@ export function enqueue(opts: EnqueueOptions): JobInfo {
     state: 'queued',
     itemId: opts.itemId,
     rootId: opts.rootId,
+    provider: opts.provider,
     createdAt: Date.now(),
   };
   state.queued.push({ info, priority: opts.priority, controller: new AbortController() });

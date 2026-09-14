@@ -6,6 +6,7 @@
  */
 
 import type { MediaFile } from '@/types';
+import { providerHeaders, type AiProviderSettings } from './provider-settings';
 import type {
   CurationRecord,
   JobInfo,
@@ -85,16 +86,22 @@ export const libraryApi = {
   /** Register this Mac's Photos library as a root (server discovers the path). */
   addPhotosLibrary: () => request<{ root: LibraryRoot; created: boolean }>('/api/system/photos-library', { method: 'POST' }),
 
-  /** Queue local-model curation for items lacking a record (or the given items; force re-grades). */
+  /** Queue model curation for items lacking a record (or the given items; force re-grades). Uses the chosen provider. */
   analyse: (opts: { itemIds?: string[]; force?: boolean } = {}) =>
-    request<{ enqueued: number; skipped: number }>('/api/curation/analyse', { method: 'POST', body: JSON.stringify(opts) }),
+    request<{ enqueued: number; skipped: number }>('/api/curation/analyse', { method: 'POST', body: JSON.stringify(opts), headers: providerHeaders() }),
   curation: async (id: string) => (await request<{ record: CurationRecord }>(`/api/library/items/${encodeURIComponent(id)}/curation`)).record,
   select: (opts: { slots: number; videoRatio?: number; chronological?: boolean; exclude?: string[] }) =>
     request<{ picks: MontagePick[]; considered: number }>('/api/curation/select', { method: 'POST', body: JSON.stringify(opts) }),
 
-  /** Story plan for the given shots (project order). Model-written when Ollama is up, heuristic otherwise. */
+  /** Story plan for the given shots (project order). Model-written when the chosen provider is up, heuristic otherwise. */
   storyPlan: (opts: { keys?: string[]; force?: boolean } = {}) =>
-    request<{ plan: StoryPlan; cached: boolean }>('/api/story/plan', { method: 'POST', body: JSON.stringify(opts) }),
+    request<{ plan: StoryPlan; cached: boolean }>('/api/story/plan', { method: 'POST', body: JSON.stringify(opts), headers: providerHeaders() }),
+
+  /** One tiny call to prove a provider (and, for Gemini, the key) works. */
+  testProvider: (settings: AiProviderSettings) =>
+    request<{ ok: true; provider: string; model: string }>('/api/system/provider-test', { method: 'POST', headers: providerHeaders(settings) }),
+  /** Forget the cloud key parked in server memory. */
+  clearCloudSession: () => request<{ cleared: boolean }>('/api/system/session', { method: 'DELETE' }),
 };
 
 // ---------------------------------------------------------------------------

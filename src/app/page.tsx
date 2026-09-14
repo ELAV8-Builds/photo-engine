@@ -13,6 +13,7 @@ import { loadProject, saveProject, updateProject } from '@/lib/project-manager';
 import { SMART_TEMPLATES, expandTemplateForMedia } from '@/lib/templates';
 import { libraryApi, LibraryApiError } from '@/lib/library-client';
 import { buildStoryTextOverrides, orderMediaByStory, rolesForMedia, storyKeysForMedia, templateIdForStyle } from '@/lib/story-apply';
+import { loadProviderSettings } from '@/lib/provider-settings';
 import type { MixerOverrides } from '@/components/TemplateMixer';
 
 function HomeContent() {
@@ -51,6 +52,7 @@ function HomeContent() {
     setStoryBusy(true);
     setStoryError(null);
     try {
+      await loadProviderSettings(); // so the request carries the chosen provider (and key) headers
       const { plan } = await libraryApi.storyPlan({ keys: storyKeys, force });
       setStoryPlan(plan);
       setStoryApplied(false);

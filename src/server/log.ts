@@ -15,7 +15,7 @@ type Level = 'debug' | 'info' | 'warn' | 'error';
 
 const SECRET_KEY_PATTERN = /(api[_-]?key|token|secret|authorization|password)/i;
 
-function redact(value: unknown): unknown {
+export function redact(value: unknown): unknown {
   if (value === null || value === undefined) return value;
   if (typeof value === 'string') {
     return value.length > 24 && /^[A-Za-z0-9_\-]+$/.test(value) ? `${value.slice(0, 4)}…[redacted]` : value;

@@ -128,6 +128,9 @@ export type JobType = 'scan-root' | 'prepare' | 'proxy360' | 'signals' | 'curate
 
 export type JobState = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
 
+/** Where model work runs. `local` = Ollama on this Mac (default); `gemini` = the user's opt-in cloud key. */
+export type ProviderKind = 'local' | 'gemini';
+
 export interface JobInfo {
   id: string;
   type: JobType;
@@ -135,6 +138,8 @@ export interface JobInfo {
   state: JobState;
   itemId?: string;
   rootId?: string;
+  /** Model-lane jobs only; absent means local. Never persisted (jobs live in memory). */
+  provider?: ProviderKind;
   /** 0–1 when the handler reports progress. */
   progress?: number;
   createdAt: number;
@@ -221,6 +226,8 @@ export interface SystemCapabilities {
   ollama: { running: boolean; version?: string; models: string[]; model: string; modelAvailable: boolean };
   /** macOS Photos library detected on this Mac (path stays server-side). */
   photosLibrary: PhotosLibraryInfo;
+  /** A cloud key is held in server memory for background jobs (never on disk). */
+  cloudSession: { active: boolean; kind?: ProviderKind; model?: string; expiresAt?: number };
 }
 
 export interface PhotosLibraryInfo {

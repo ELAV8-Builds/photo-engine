@@ -7,10 +7,16 @@
 import { assertServer } from '../runtime';
 import { enqueue, PRIORITY, type EnqueueOptions } from '../jobs/queue';
 import type { IndexedItem } from './index-store';
+import type { ProviderKind } from '@/types/library';
 
 assertServer();
 
-export function planItemJobs(item: IndexedItem): EnqueueOptions[] {
+export interface PlanOptions {
+  /** Backend for the curate job (Phase 4). Defaults to local. */
+  provider?: ProviderKind;
+}
+
+export function planItemJobs(item: IndexedItem, opts: PlanOptions = {}): EnqueueOptions[] {
   const jobs: EnqueueOptions[] = [];
   const s = item.status;
 
@@ -33,7 +39,7 @@ export function planItemJobs(item: IndexedItem): EnqueueOptions[] {
   // the cheapest thing to defer, so it always sits at the back of the queue.
   const curateInputsReady = item.kind === 'photo' ? s.thumb === 'ready' : s.signals === 'ready';
   if (s.curate === 'pending' && curateInputsReady) {
-    jobs.push({ type: 'curate', lane: 'model', priority: PRIORITY.curate, itemId: item.id, rootId: item.rootId });
+    jobs.push({ type: 'curate', lane: 'model', priority: PRIORITY.curate, itemId: item.id, rootId: item.rootId, provider: opts.provider });
   }
   if (s.curate === 'ready' && s.highlights === 'pending') {
     jobs.push({ type: 'highlights', lane: 'ffmpeg', priority: PRIORITY.highlights, itemId: item.id, rootId: item.rootId });
@@ -41,8 +47,8 @@ export function planItemJobs(item: IndexedItem): EnqueueOptions[] {
   return jobs;
 }
 
-export function enqueueItemWork(item: IndexedItem): number {
-  const jobs = planItemJobs(item);
+export function enqueueItemWork(item: IndexedItem, opts: PlanOptions = {}): number {
+  const jobs = planItemJobs(item, opts);
   for (const j of jobs) enqueue(j);
   return jobs.length;
 }

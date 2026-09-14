@@ -1,6 +1,6 @@
 # PhotoForge v4.1 — Spec Tracker
 
-## Library & Local AI Curation — Phases 1–3 ✅ COMPLETE (see docs/handoff/PHASE-4.md)
+## Library & Local AI Curation — Phases 1–4 ✅ COMPLETE (see docs/handoff/PHASE-5.md)
 | # | Feature | Status | Notes |
 |---|---------|--------|-------|
 | L1.1 | Library folders (server-indexed, localhost-only API) | ✅ DONE | `src/server/**`, native macOS folder picker, id-addressed media, Range streaming |
@@ -18,8 +18,10 @@
 | L3.1 | Story context + model pass + deterministic validation + heuristic fallback | ✅ DONE | `src/server/story/*`; `POST /api/story/plan`; cached per shot list |
 | L3.2 | Kind-aware slot assignment + role-shaped expansion; typed slots on Cinematic Journey / Rapid Fire | ✅ DONE | `assignMediaToSlots(…, kinds)`, `expandTemplateForMedia(…, roles)`, `applyShotRoles` |
 | L3.3 | Story card (write / regenerate / apply) + title, subtitle, chapter overlays; music mood note | ✅ DONE | `StoryCard.tsx`, `src/lib/story-apply.ts`; user-added text now exports (shared `drawSlotText`) |
-| L4 | Settings + optional Gemini provider | ⏳ NEXT | Spec in docs/handoff/PHASE-4.md |
-| L5 | 360 signature moves (AI yaw, virtual pan, tiny planet) | ⏳ | |
+| L4.1 | `GeminiProvider` behind `VisionProvider` (fetch, JSON mode, low media resolution, minimal thinking) | ✅ DONE (contract verified live; real-key run not verified) | `src/server/ai/gemini.ts`; 429 back-off; unavailability keeps items pending |
+| L4.2 | Browser-owned key: IndexedDB + per-request headers; in-memory cloud session for jobs; never on disk/logs | ✅ DONE | `src/lib/provider-settings.ts`, `src/server/ai/{session,index}.ts`; `redact()` checked |
+| L4.3 | Settings page (profile, local model, provider, key, test, forget) + header link + cloud badge | ✅ DONE | `src/app/settings/page.tsx`; QA 375/768/1280 |
+| L5 | 360 signature moves (AI yaw pan, tiny planet, .insp, yaw editing) | ⏳ NEXT | Spec in docs/handoff/PHASE-5.md (sendcmd + tiny-planet proven) |
 
 ## Phase 1 — Fix Fundamentals ✅ COMPLETE
 | # | Feature | Status | Notes |

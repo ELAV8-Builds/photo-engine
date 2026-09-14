@@ -1,5 +1,6 @@
 import { badRequest, handle, json, readJsonBody } from '@/server/http';
 import { analyseItems } from '@/server/library/service';
+import { readProviderChoice } from '@/server/ai';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -7,11 +8,13 @@ export const dynamic = 'force-dynamic';
 const ITEM_ID_RE = /^[a-f0-9]{20}$/;
 
 /**
- * Queue local-model curation. Body: { itemIds?: string[], force?: boolean }.
- * Without itemIds every item lacking a record is queued. 503 when Ollama or
- * the configured model is unavailable.
+ * Queue model curation. Body: { itemIds?: string[], force?: boolean }.
+ * Headers X-PhotoForge-Provider / X-PhotoForge-Gemini-Key pick the backend
+ * (default local). Without itemIds every item lacking a record is queued.
+ * 503 when the local model server or model is unavailable.
  */
 export const POST = handle(async (req: Request) => {
+  const provider = readProviderChoice(req);
   const body = await readJsonBody(req);
   let itemIds: string[] | undefined;
   if (body.itemIds !== undefined) {
@@ -22,5 +25,5 @@ export const POST = handle(async (req: Request) => {
   }
   const force = body.force === undefined ? false : body.force;
   if (typeof force !== 'boolean') throw badRequest('"force" must be a boolean');
-  return json(await analyseItems({ itemIds, force }));
+  return json(await analyseItems({ itemIds, force, provider }));
 });

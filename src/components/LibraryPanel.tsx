@@ -23,6 +23,7 @@ import {
   pickKey,
 } from '@/lib/library-client';
 import { detectFaces } from '@/lib/face-detect';
+import { cloudProviderActive, loadProviderSettings } from '@/lib/provider-settings';
 
 interface LibraryPanelProps {
   /** Library item ids with at least one entry in the project (whole item or a highlight). */
@@ -56,11 +57,13 @@ export default function LibraryPanel({ inProjectIds, inProjectMediaIds, suggeste
   const [manualPath, setManualPath] = useState('');
   const [loaded, setLoaded] = useState(false);
   const [pollTick, setPollTick] = useState(0);
+  const [cloudAi, setCloudAi] = useState(false);
   const wasActive = useRef(false);
   const pollFailed = useRef(false);
 
   const isActive = !!jobs && (jobs.queued > 0 || jobs.running.length > 0);
-  const aiReady = !!caps?.ollama?.modelAvailable;
+  // Cloud provider needs no local model; otherwise Ollama + the configured model must be up.
+  const aiReady = cloudAi || !!caps?.ollama?.modelAvailable;
 
   // Follow the template's slot count until the user types their own number.
   const pickCountTouched = useRef(false);
@@ -88,7 +91,8 @@ export default function LibraryPanel({ inProjectIds, inProjectMediaIds, suggeste
     let cancelled = false;
     (async () => {
       try {
-        await Promise.all([refreshCaps(), refreshRootsAndItems(), refreshJobs()]);
+        const [, , , provider] = await Promise.all([refreshCaps(), refreshRootsAndItems(), refreshJobs(), loadProviderSettings()]);
+        if (!cancelled) setCloudAi(cloudProviderActive(provider));
       } catch (err) {
         if (!cancelled) setError(errorText(err));
       } finally {
@@ -373,11 +377,18 @@ export default function LibraryPanel({ inProjectIds, inProjectMediaIds, suggeste
         </div>
       </div>
 
-      {/* Local AI status */}
+      {/* AI status */}
       {ollama && (
         <p className="flex items-center gap-2 text-xs text-text-muted" role="status">
           <span aria-hidden="true" className={`inline-block w-2 h-2 rounded-full ${aiReady ? 'bg-accent-gold' : 'bg-text-muted'}`} />
-          {aiReady ? (
+          {cloudAi ? (
+            <>
+              <span className="text-accent-gold">Cloud AI on</span> · Gemini grades frames and writes stories — 512-px frames and captions leave this Mac.{' '}
+              <a href="/settings" className="underline underline-offset-2 hover:text-white">
+                Settings
+              </a>
+            </>
+          ) : aiReady ? (
             <>
               Local AI ready · <span className="font-mono text-text-secondary">{ollama.model}</span>
               {analysedCount > 0 && <span> · {analysedCount}/{items.length} analysed</span>}
