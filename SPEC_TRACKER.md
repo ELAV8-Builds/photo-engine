@@ -45,6 +45,16 @@
 | L7.6 | Hygiene: `error` clears when steps recover; yaw frames named by time (`<id>-view-<t>-…`), GC owns them (+ legacy form always orphaned, peak-frame ownership) | ✅ DONE | `index-store.ts`, `record.ts`, `gc.ts`; 0 items with errors after the run; storage 404 files / 2.85 GB, 0 orphans, 0 unrecognised; 21 pure checks |
 | L7.7 | Verify Gemini / real `.insp` / Photos library | ⚠️ STILL OWNER-GATED | No key pasted, no Full Disk Access granted, no real `.insp` on the card during Phase 7 |
 
+## Library & Local AI Curation — Phase 8 ✅ COMPLETE (see docs/handoff/PHASE-9.md)
+| # | Feature | Status | Notes |
+|---|---------|--------|-------|
+| L8.1 | Second-moment quality floor: fused score ≥ 0.5 AND within 15% of top | ✅ DONE | `SECOND_MOMENT_MIN_SCORE` in `highlights.ts`; measured all 26 second moments (0.42×3, 0.6×19, 0.65, ~0.7×3 — empty gap 0.42–0.60); floor cut exactly the 3 dark weak-top doubles; after re-curation 24 second moments, all ≥ 0.55, eye-checked near the floor |
+| L8.2 | User-view memory v2 (owner-approved): kept pans + planet spins survive re-analysis | ✅ DONE | `user-views.ts` v1→2 (`viewPath` window-relative, `planetRotationDeg`, validated on read); `anchorRememberedPath` re-anchors via clamp→simplify→panDecision; verified live on VID_005 (pan 35→−45 + spin 90° restored exactly after forced re-analysis) |
+| L8.3 | Instant export cancel (worker terminate, not frame-by-frame cleanup) + media name in progress card | ✅ DONE | `RenderStep.tsx`; cancel-to-idle 3 ms / 3 ms / 2 ms at early / mid (slot 6) / late (encoding 50%, ~2,100 frames — was ~17 s); post-cancel export completed (225 s, 12 slots, 720p, 12.3 MB MP4) |
+| L8.4 | GC auto-sweep after "Remove folder" (owner-approved) | ✅ DONE | `unregisterRoot` → `clearOrphans()`; throwaway-root test swept 2 stranded files instantly, real roots untouched |
+| L8.5 | Hygiene: dead `renderSlotToCanvas`/`renderTransition` removed from RenderStep.tsx | ✅ DONE | `holdFrames`/`drawCover` are also dead but weren't approved for deletion — flagged for Phase 9 |
+| L8.6 | Verify Gemini / real `.insp` / Photos library | ⚠️ STILL OWNER-GATED | No key pasted, no Full Disk Access granted, no real `.insp` on the card during Phase 8 |
+
 ## Phase 1 — Fix Fundamentals ✅ COMPLETE
 | # | Feature | Status | Notes |
 |---|---------|--------|-------|

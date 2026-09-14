@@ -552,9 +552,6 @@ export default function RenderStep(props: RenderStepProps) {
     const ensureNotAborted = () => {
       if (signal.aborted) throw abortError();
     };
-    // Kept outside the try so the catch can clean the virtual FS after a cancel.
-    let ffmpegForCleanup: import('@ffmpeg/ffmpeg').FFmpeg | null = null;
-    let framesWritten = 0;
 
     setExportNotice(null);
     setProgress({ status: 'preparing', percent: 2, currentFrame: 0, totalFrames: template.slots.length, message: 'Loading video encoder...' });
@@ -564,7 +561,6 @@ export default function RenderStep(props: RenderStepProps) {
       const ffmpeg = await initFFmpeg((msg) => {
         setProgress(prev => ({ ...prev, message: msg }));
       });
-      ffmpegForCleanup = ffmpeg;
       ensureNotAborted();
 
       const canvas = document.createElement('canvas');
@@ -594,7 +590,8 @@ export default function RenderStep(props: RenderStepProps) {
           status: 'rendering',
           percent: 5 + Math.round((i / template.slots.length) * 55),
           currentFrame: i + 1,
-          message: `Rendering slot ${i + 1} of ${template.slots.length}...`,
+          // §3.3: name the media so the Cancel decision is informed.
+          message: `Rendering slot ${i + 1} of ${template.slots.length}${assignedMedia ? ` — ${assignedMedia.name}` : '...'}`,
         }));
 
         const slotLayout = slot.layout ?? 'single';
@@ -666,8 +663,6 @@ export default function RenderStep(props: RenderStepProps) {
           }
         } catch (err) {
           throw describeRenderError(err, `slot ${i + 1} of ${template.slots.length}${assignedMedia ? ` (${assignedMedia.name})` : ''}`, globalFrameNumber);
-        } finally {
-          framesWritten = globalFrameNumber;
         }
 
         // Render inter-slot transition
@@ -694,8 +689,6 @@ export default function RenderStep(props: RenderStepProps) {
               );
             } catch (err) {
               throw describeRenderError(err, `the transition into slot ${i + 2} (${nextMedia.name})`, globalFrameNumber);
-            } finally {
-              framesWritten = globalFrameNumber;
             }
           }
         }
@@ -757,8 +750,6 @@ export default function RenderStep(props: RenderStepProps) {
           }
         } catch (err) {
           throw describeRenderError(err, `the fade-out${lastMedia ? ` (${lastMedia.name})` : ''}`, globalFrameNumber);
-        } finally {
-          framesWritten = globalFrameNumber;
         }
       }
 
@@ -826,15 +817,10 @@ export default function RenderStep(props: RenderStepProps) {
       }
     } catch (e) {
       if (controller.signal.aborted) {
-        // Cancelled: clear the virtual FS if the worker is still alive (a cancel
-        // during encoding terminated it — its FS died with it) and say so calmly.
-        if (ffmpegForCleanup) {
-          try {
-            await cleanupFS(ffmpegForCleanup, framesWritten);
-          } catch {
-            // Worker terminated — nothing to clean.
-          }
-        }
+        // Cancelled: terminate the worker — the virtual FS and every written
+        // frame die with it instantly, at any progress point (§3.3). The next
+        // export reloads the core. (A cancel during encoding already did this.)
+        resetFFmpeg();
         setExportNotice('Export cancelled — nothing was saved.');
         setProgress({ status: 'idle', percent: 0, currentFrame: 0, totalFrames: 0, message: '' });
         return;
@@ -1495,11 +1481,6 @@ function drawCover(
   ctx.drawImage(img, (cw - dw) / 2, (ch - dh) / 2, dw, dh);
 }
 
-// ====================================================================
-//  renderSlotToCanvas — renders one slot using the v4 EffectsEngine
-//  (Used by preview — does NOT capture frames to ffmpeg)
-// ====================================================================
-
 const USER_TEXT_DEFAULTS: TextOverlay = {
   text: 'Your Text', position: 'center', fontSize: 'lg',
   fontWeight: 'bold', animation: 'fade-in', color: '#ffffff',
@@ -1523,150 +1504,6 @@ function drawSlotText(
     if (resolved) drawTextOverlay(ctx, resolved, width, height, t);
   } else if (override && typeof override === 'object' && override !== null) {
     drawTextOverlay(ctx, { ...USER_TEXT_DEFAULTS, ...override } as TextOverlay, width, height, t);
-  }
-}
-
-async function renderSlotToCanvas(
-  ctx: CanvasRenderingContext2D,
-  media: MediaFile,
-  width: number,
-  height: number,
-  slot: TemplateSlot,
-  theme: TemplateTheme,
-  textOverrides: Record<number, TextOverlayOverride>,
-  slotIndex: number,
-  engine: EffectsEngine,
-): Promise<void> {
-  const source = await loadMediaImage(media);
-  const isVideo = media.type === 'video' && source instanceof HTMLVideoElement;
-  const fps = 30;
-  const frames = Math.round(slot.duration * fps);
-  const { fx, fy } = getFocusPoint(media, slot.holdPoint);
-
-  // Convert template slot to engine slot config
-  const slotConfig = templateSlotToEngineSlot(slot, fx, fy);
-
-  // Create slot array + image map for the engine
-  const slotConfigs: SlotConfig[] = [slotConfig];
-  const imageMap = new Map<number, CanvasImageSource>();
-  imageMap.set(0, source);
-
-  // Initialize particles for this slot
-  let particles: Particle[] = [];
-  if (theme.particles !== 'none') {
-    const particleCount = Math.round(80 * theme.particleDensity);
-    particles = createParticles(theme.particles, particleCount, width, height);
-  }
-
-  for (let frame = 0; frame < frames; frame++) {
-    const t = frames > 1 ? frame / (frames - 1) : 0;
-    const globalTime = t * slotConfig.duration;
-
-    // For video media, seek to the correct time for this frame
-    if (isVideo) {
-      const videoTime = getVideoTime(t, media);
-      await seekToTime(source as HTMLVideoElement, videoTime);
-    }
-
-    // Use the v4 engine for motion + post-processing
-    const engineFrame = engine.calculateFrame(globalTime, slotConfigs);
-    engine.renderFrame(ctx, engineFrame, slotConfigs, imageMap);
-
-    // --- Theme overlays (on top of engine output) ---
-
-    // CSS filter overlay via tint
-    if (theme.tintOverlay) {
-      drawTintOverlay(ctx, width, height, theme.tintOverlay);
-    }
-
-    // Theme-level vignette (engine may also add slot-level vignette)
-    if (theme.vignette > 0) {
-      drawVignette(ctx, width, height, theme.vignette);
-    }
-
-    // Particles
-    if (theme.particles !== 'none' && particles.length > 0) {
-      drawParticles(ctx, particles, width, height);
-      particles = updateParticles(particles, 1 / fps, width, height);
-    }
-
-    // Text overlay (base from template or user-added via overrides)
-    drawSlotText(ctx, slot, overrideForSlot(textOverrides, slot, slotIndex), width, height, t);
-
-    // Yield to browser every 5 frames to prevent blocking
-    if (frame % 5 === 0) {
-      await new Promise(r => requestAnimationFrame(r));
-    }
-  }
-}
-
-// ====================================================================
-//  renderTransition — draws transition between two slots using v4 engine
-//  (Used by preview — does NOT capture frames to ffmpeg)
-// ====================================================================
-
-async function renderTransition(
-  ctx: CanvasRenderingContext2D,
-  fromMedia: MediaFile,
-  toMedia: MediaFile,
-  width: number,
-  height: number,
-  fromSlot: TemplateSlot,
-  toSlot: TemplateSlot,
-  engine: EffectsEngine,
-): Promise<void> {
-  if (toSlot.transition === 'none') return;
-
-  const fromSource = await loadMediaImage(fromMedia);
-  const toSource = await loadMediaImage(toMedia);
-  const fromIsVideo = fromMedia.type === 'video' && fromSource instanceof HTMLVideoElement;
-  const toIsVideo = toMedia.type === 'video' && toSource instanceof HTMLVideoElement;
-
-  const { fx: fxFrom, fy: fyFrom } = getFocusPoint(fromMedia, fromSlot.holdPoint);
-  const { fx: fxTo, fy: fyTo } = getFocusPoint(toMedia, toSlot.holdPoint);
-
-  const fromConfig = templateSlotToEngineSlot(fromSlot, fxFrom, fyFrom);
-  const toConfig = templateSlotToEngineSlot(toSlot, fxTo, fyTo);
-
-  const fps = 30;
-  const transDuration = toSlot.transitionDuration ?? 0.4;
-  const frames = Math.round(transDuration * fps);
-
-  // Build a two-slot config to let the engine handle the transition
-  const slotConfigs: SlotConfig[] = [fromConfig, toConfig];
-  const imageMap = new Map<number, CanvasImageSource>();
-  imageMap.set(0, fromSource);
-  imageMap.set(1, toSource);
-
-  for (let frame = 0; frame < frames; frame++) {
-    const t = frames > 1 ? frame / (frames - 1) : 1;
-
-    // Seek video sources during transition
-    if (fromIsVideo) {
-      const fromProgress = Math.min(1, 0.9 + t * 0.1); // Last 10% of from-clip
-      const fromTime = getVideoTime(fromProgress, fromMedia);
-      await seekToTime(fromSource as HTMLVideoElement, fromTime);
-    }
-    if (toIsVideo) {
-      const toTime = getVideoTime(t * 0.1, toMedia); // First 10% of to-clip
-      await seekToTime(toSource as HTMLVideoElement, toTime);
-    }
-
-    // Position the global time within the transition zone (end of slot 0)
-    const transStart = fromConfig.duration - transDuration;
-    const globalTime = transStart + t * transDuration;
-
-    const engineFrame = engine.calculateFrame(globalTime, slotConfigs);
-    engine.renderFrame(ctx, engineFrame, slotConfigs, imageMap);
-
-    // Apply transition overlay if configured
-    if (fromSlot.transitionOverlay) {
-      renderTransitionOverlay(ctx, fromSlot.transitionOverlay, width, height, t);
-    }
-
-    if (frame % 3 === 0) {
-      await new Promise(r => requestAnimationFrame(r));
-    }
   }
 }
 

@@ -16,7 +16,7 @@ import { budgetFor, getSettings } from '../settings/store';
 import { loadCuration, removeCuration, removeHighlightArtifacts, saveCuration } from '../curation/record';
 import { clampPath } from '../media/pan';
 import { panDecision, simplifyPath } from '../analysis/pan-plan';
-import { rememberUserView, rememberUserViewsFrom } from '../curation/user-views';
+import { rememberedFromWindow, rememberUserView, rememberUserViewsFrom } from '../curation/user-views';
 import { selectForMontage, type SelectOptions } from '../curation/select';
 import { buildStoryContext, defaultKeys, type ContextSource } from '../story/context';
 import { generateStoryPlan, loadStoryPlan, saveStoryPlan } from '../story/generate';
@@ -110,7 +110,9 @@ export async function unregisterRoot(rootId: string): Promise<boolean> {
   const removed = await removeRoot(rootId);
   if (removed) {
     await dropRootIndex(rootId);
-    log.info('root removed', { rootId, cancelledJobs: cancelled });
+    // Phase 8 (§3.5, owner-approved): a removed root predictably strands its cached artefacts; sweep them now.
+    const swept = await clearOrphans();
+    log.info('root removed', { rootId, cancelledJobs: cancelled, sweptFiles: swept.removedFiles, sweptBytes: swept.removedBytes });
   }
   return removed;
 }
@@ -259,7 +261,6 @@ export async function setHighlightView(
   cancelWhere((j) => j.itemId === item.id && (j.type === 'highlights' || j.type === 'pan360'));
   const previous = h.view;
   h.view = { ...view, source: 'user', version: (h.view?.version ?? 0) + 1 };
-  await rememberUserView(item.id, { start: h.start, end: h.end, view: h.view });
 
   const hadPan = !!h.viewPath && h.viewPath.length >= 2;
   let kept = false;
@@ -281,6 +282,8 @@ export async function setHighlightView(
   h.proxy = 'pending';
   // Phase 7 (§3.3): the planet's spin, validated and snapped to 15° by the route.
   if (opts.planetRotationDeg !== undefined) h.planetRotationDeg = opts.planetRotationDeg === 0 ? undefined : opts.planetRotationDeg;
+  // Phase 8 (§3.2): remember the finished state — view plus kept pan and spin — so a re-analysis restores all of it.
+  await rememberUserView(item.id, rememberedFromWindow(h));
   await removeHighlightArtifacts(item.id, h.index);
   h.planetProxy = 'pending'; // removed with the other artefacts; cheap to redo from the .lrv
   await saveCuration(record);

@@ -160,10 +160,20 @@ export function minGapSec(durationSec: number): number {
 export const SECOND_MOMENT_SCORE_RATIO = 0.85;
 
 /**
+ * Phase 8 (§3.1): a second moment must also clear this fused score on its own.
+ * Measured across the X5 card: real second moments cluster at 0.60–0.70 while
+ * weak-top clips (dark, quality-penalised, fused 0.42) doubled an equally weak
+ * runner-up under the ratio rule alone. 0.5 sits mid-gap (nothing scored
+ * between 0.42 and 0.60) and blocks any second on a clip whose top is weak.
+ */
+export const SECOND_MOMENT_MIN_SCORE = 0.5;
+
+/**
  * Greedy temporal non-max suppression: best first, nothing within `minGap` of a
  * pick. Clips capped at one moment (under 225 s) may keep a second when another
  * candidate at least the gap away scores within 15% of the top — a short clip
- * with two genuinely strong beats deserves both (§3.2).
+ * with two genuinely strong beats deserves both (§3.2) — and clears the
+ * absolute floor (§3.1), so a weak clip never doubles a weak moment.
  */
 export function selectPeaks(candidates: Candidate[], durationSec: number): Candidate[] {
   const cap = highlightCap(durationSec);
@@ -176,7 +186,9 @@ export function selectPeaks(candidates: Candidate[], durationSec: number): Candi
   }
   if (cap === 1 && picked.length === 1) {
     const top = picked[0];
-    const second = sorted.find((c) => c !== top && Math.abs(c.t - top.t) >= gap && c.score >= SECOND_MOMENT_SCORE_RATIO * top.score);
+    const second = sorted.find(
+      (c) => c !== top && Math.abs(c.t - top.t) >= gap && c.score >= SECOND_MOMENT_SCORE_RATIO * top.score && c.score >= SECOND_MOMENT_MIN_SCORE,
+    );
     if (second) picked.push(second);
   }
   return picked;
