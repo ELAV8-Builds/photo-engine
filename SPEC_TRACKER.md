@@ -1,6 +1,6 @@
 # PhotoForge v4.1 — Spec Tracker
 
-## Library & Local AI Curation — Phases 1–2 ✅ COMPLETE (see docs/handoff/PHASE-3.md)
+## Library & Local AI Curation — Phases 1–3 ✅ COMPLETE (see docs/handoff/PHASE-4.md)
 | # | Feature | Status | Notes |
 |---|---------|--------|-------|
 | L1.1 | Library folders (server-indexed, localhost-only API) | ✅ DONE | `src/server/**`, native macOS folder picker, id-addressed media, Range streaming |
@@ -15,8 +15,10 @@
 | L2.5 | Thermal watchdog (`pmset -g therm`) pausing the queue | ✅ DONE | `src/server/jobs/thermal.ts`; `thermalPaused` in `/api/jobs` |
 | L2.6 | UI: scores, moments, sort, Analyse library, re-analyse, Auto-pick | ✅ DONE | `LibraryPanel.tsx`; highlight entries `lib-<id>-hl<n>` with trims |
 | L2.7 | macOS Photos library detection + one-click add as root | ✅ DONE (permission path verified) | `src/server/photos/library.ts`; needs Full Disk Access for the launching app |
-| L3 | Story layer (titles, chapters, template recommendation) | ⏳ NEXT | Spec in docs/handoff/PHASE-3.md |
-| L4 | Settings + optional Gemini provider | ⏳ | |
+| L3.1 | Story context + model pass + deterministic validation + heuristic fallback | ✅ DONE | `src/server/story/*`; `POST /api/story/plan`; cached per shot list |
+| L3.2 | Kind-aware slot assignment + role-shaped expansion; typed slots on Cinematic Journey / Rapid Fire | ✅ DONE | `assignMediaToSlots(…, kinds)`, `expandTemplateForMedia(…, roles)`, `applyShotRoles` |
+| L3.3 | Story card (write / regenerate / apply) + title, subtitle, chapter overlays; music mood note | ✅ DONE | `StoryCard.tsx`, `src/lib/story-apply.ts`; user-added text now exports (shared `drawSlotText`) |
+| L4 | Settings + optional Gemini provider | ⏳ NEXT | Spec in docs/handoff/PHASE-4.md |
 | L5 | 360 signature moves (AI yaw, virtual pan, tiny planet) | ⏳ | |
 
 ## Phase 1 — Fix Fundamentals ✅ COMPLETE

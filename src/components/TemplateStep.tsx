@@ -6,6 +6,19 @@ import { getParticleCSS } from '@/lib/particles';
 import { MediaFile, SmartTemplate, TextOverlay, TextOverlayOverride, TextBackdrop } from '@/types';
 import { resolveTextOverlay, getTextAnimationCSS, getBackdropPreviewCSS } from '@/lib/text-renderer';
 import TemplateMixer, { type MixerOverrides } from '@/components/TemplateMixer';
+import StoryCard from '@/components/StoryCard';
+import type { StoryPlan } from '@/types/library';
+
+/** Story layer state owned by the page (Phase 3). */
+export interface StoryControls {
+  plan: StoryPlan | null;
+  busy: boolean;
+  error: string | null;
+  available: boolean;
+  applied: boolean;
+  onGenerate: (force: boolean) => void;
+  onApply: () => void;
+}
 
 interface TemplateStepProps {
   selectedTemplate: string | null;
@@ -19,6 +32,12 @@ interface TemplateStepProps {
   onTextOverridesChange: (overrides: Record<number, TextOverlayOverride>) => void;
   mixerOverrides: MixerOverrides;
   onMixerOverridesChange: (overrides: MixerOverrides) => void;
+  story?: StoryControls;
+}
+
+/** Media id → kind, so slot assignment can honour photo/video slot types. */
+function kindsOf(media: MediaFile[]): Map<string, 'photo' | 'video'> {
+  return new Map(media.map((m) => [m.id, m.type]));
 }
 
 const STYLE_ICONS: Record<string, string> = {
@@ -73,7 +92,7 @@ function AnimatedPreview({
 
   const selectedMedia = media.filter((m) => m.selected);
   const mediaIds = selectedMedia.map((m) => m.id);
-  const slotAssignments = assignMediaToSlots(template, mediaIds);
+  const slotAssignments = assignMediaToSlots(template, mediaIds, kindsOf(selectedMedia));
 
   // Map id back to media object for display
   const mediaById = useMemo(() => {
@@ -175,7 +194,7 @@ function TimelineVisualization({
 }) {
   const selectedMedia = media.filter((m) => m.selected);
   const mediaIds = selectedMedia.map((m) => m.id);
-  const slotAssignments = assignMediaToSlots(template, mediaIds);
+  const slotAssignments = assignMediaToSlots(template, mediaIds, kindsOf(selectedMedia));
 
   const mediaById = useMemo(() => {
     const map = new Map<string, MediaFile>();
@@ -419,7 +438,7 @@ function TextOverlayEditor({
     .filter(({ slot, index }) => slot.textOverlay && textOverrides[index] === null);
 
   const selectedMedia = media.filter(m => m.selected);
-  const slotAssignments = assignMediaToSlots(template, selectedMedia.map(m => m.id));
+  const slotAssignments = assignMediaToSlots(template, selectedMedia.map(m => m.id), kindsOf(selectedMedia));
   const mediaById = new Map<string, MediaFile>();
   selectedMedia.forEach(m => mediaById.set(m.id, m));
 
@@ -918,6 +937,7 @@ export default function TemplateStep({
   onTextOverridesChange,
   mixerOverrides,
   onMixerOverridesChange,
+  story,
 }: TemplateStepProps) {
   const [showMixer, setShowMixer] = useState(false);
   const selectedMedia = media.filter((m) => m.selected);
@@ -944,6 +964,19 @@ export default function TemplateStep({
           {selectedMedia.length} media selected &mdash; pick a style to shape your video
         </p>
       </div>
+
+      {/* Story layer: title, chapters and a template recommendation from the library captions */}
+      {story && (
+        <StoryCard
+          plan={story.plan}
+          busy={story.busy}
+          error={story.error}
+          available={story.available}
+          applied={story.applied}
+          onGenerate={story.onGenerate}
+          onApply={story.onApply}
+        />
+      )}
 
       {/* Templates Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">

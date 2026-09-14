@@ -7,6 +7,8 @@
  * - Everything here is JSON-serialisable (no Blob/File/Date).
  */
 
+import type { TemplateStyle } from './index';
+
 export type MediaKind = 'photo' | 'video';
 
 /** Lifecycle of a background processing step for one item. */
@@ -290,6 +292,67 @@ export interface CurationRecord {
   grade?: FrameGrade;
   highlights: HighlightWindow[];
   stats: { sampled: number; graded: number; reused: number; candidates: number };
+}
+
+// ---------------------------------------------------------------------------
+// Story layer (Phase 3)
+// ---------------------------------------------------------------------------
+
+/** The 12 template styles; the browser maps a style to its SmartTemplate id. */
+export type StoryTemplateStyle = TemplateStyle;
+
+export type StoryPacing = 'calm' | 'steady' | 'fast';
+export type ShotRole = 'opener' | 'beat' | 'breather' | 'closer';
+
+/** One shot the story is told with — a photo or one video highlight. Indices refer to this list. */
+export interface StoryContextEntry {
+  index: number;
+  /** `itemId` or `itemId#highlightIndex`. */
+  key: string;
+  kind: MediaKind;
+  /** Capture time, epoch ms (highlights: clip capture + offset). */
+  at: number;
+  caption?: string;
+  scene?: string;
+  people: boolean;
+  faces: boolean;
+  score: number;
+  durationSec?: number;
+}
+
+export interface StoryContext {
+  entries: StoryContextEntry[];
+  startAt: number;
+  endAt: number;
+  dayCount: number;
+}
+
+export interface StoryChapter {
+  title: string;
+  startIndex: number;
+  endIndex: number;
+}
+
+export interface StoryShot {
+  index: number;
+  role: ShotRole;
+}
+
+export interface StoryPlan {
+  version: 1;
+  source: 'model' | 'heuristic';
+  model?: string;
+  createdAt: number;
+  /** The shots this plan was written for, in order (same keys as StoryContextEntry.key). */
+  keys: string[];
+  title: string;
+  subtitle: string;
+  chapters: StoryChapter[];
+  templateStyle: StoryTemplateStyle;
+  templateReasons: string[];
+  pacing: StoryPacing;
+  musicMood: string;
+  shotList: StoryShot[];
 }
 
 /** One entry in a montage plan. */

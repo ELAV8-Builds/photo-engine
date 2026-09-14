@@ -11,7 +11,9 @@ import { initFFmpeg, writeFrame, writeAudio, mixAudioTracks, encodeMP4, cleanupF
 import { getVideoElement, seekToTime, getVideoTime, loadMediaSource, disposeAllVideos } from '@/lib/video-frame-extractor';
 import { renderSplitScreen, getLayoutMediaCount } from '@/lib/split-screen';
 import { renderTransitionOverlay } from '@/lib/transition-overlays';
+import { rolesForMedia } from '@/lib/story-apply';
 import type { MixerOverrides } from '@/components/TemplateMixer';
+import type { StoryPlan } from '@/types/library';
 
 interface RenderStepProps {
   photos: MediaFile[];
@@ -30,6 +32,8 @@ interface RenderStepProps {
   onExportComplete?: () => void;
   /** Full playlist of music tracks for export (played in sequence) */
   musicTracks?: MusicTrack[];
+  /** Applied story plan (Phase 3): opener/closer/breather roles shape the expanded slots. */
+  storyPlan?: StoryPlan | null;
 }
 
 export default function RenderStep(props: RenderStepProps) {
@@ -45,6 +49,7 @@ export default function RenderStep(props: RenderStepProps) {
     onBack,
     onExportComplete,
     musicTracks = [],
+    storyPlan = null,
   } = props;
   const textOverrides = props.textOverrides ?? {};
   const mixerOverrides = props.mixerOverrides ?? {};
@@ -108,11 +113,12 @@ export default function RenderStep(props: RenderStepProps) {
   }, [music?.url, music?.file]);
 
   // Expand template to fit all selected media (e.g., 60 photos → 60 slots)
+  const storyRoles = useMemo(() => (storyPlan ? rolesForMedia(photos, storyPlan) : undefined), [photos, storyPlan]);
   const expandedTemplate = useMemo(() => {
     if (!baseTemplate) return null;
     const targetDuration = music?.duration && music.duration > 0 ? music.duration : undefined;
-    return expandTemplateForMedia(baseTemplate, selectedMedia.length, targetDuration);
-  }, [baseTemplate, selectedMedia.length, music?.duration]);
+    return expandTemplateForMedia(baseTemplate, selectedMedia.length, targetDuration, storyRoles);
+  }, [baseTemplate, selectedMedia.length, music?.duration, storyRoles]);
 
   // Apply beat sync to the expanded template (if beats detected)
   const template = useMemo(() => {
@@ -131,9 +137,10 @@ export default function RenderStep(props: RenderStepProps) {
   }, [expandedTemplate, beatInfo]);
 
   const mediaIds = useMemo(() => selectedMedia.map(m => m.id), [selectedMedia]);
+  const mediaKinds = useMemo(() => new Map(selectedMedia.map(m => [m.id, m.type] as const)), [selectedMedia]);
   const slotAssignments = useMemo(
-    () => (template ? assignMediaToSlots(template, mediaIds) : []),
-    [template, mediaIds],
+    () => (template ? assignMediaToSlots(template, mediaIds, mediaKinds) : []),
+    [template, mediaIds, mediaKinds],
   );
 
   const mediaById = useMemo(() => {
@@ -1372,6 +1379,32 @@ function drawCover(
 //  (Used by preview — does NOT capture frames to ffmpeg)
 // ====================================================================
 
+const USER_TEXT_DEFAULTS: TextOverlay = {
+  text: 'Your Text', position: 'center', fontSize: 'lg',
+  fontWeight: 'bold', animation: 'fade-in', color: '#ffffff',
+};
+
+/**
+ * Draw a slot's text for frame progress `t`: the template's overlay resolved
+ * through the user's override, or a user-added overlay on a slot that has
+ * none. One implementation for preview and export so they never disagree.
+ */
+function drawSlotText(
+  ctx: CanvasRenderingContext2D,
+  slot: TemplateSlot,
+  override: TextOverlayOverride | undefined,
+  width: number,
+  height: number,
+  t: number,
+): void {
+  if (slot.textOverlay) {
+    const resolved = resolveTextOverlay(slot.textOverlay, override);
+    if (resolved) drawTextOverlay(ctx, resolved, width, height, t);
+  } else if (override && typeof override === 'object' && override !== null) {
+    drawTextOverlay(ctx, { ...USER_TEXT_DEFAULTS, ...override } as TextOverlay, width, height, t);
+  }
+}
+
 async function renderSlotToCanvas(
   ctx: CanvasRenderingContext2D,
   media: MediaFile,
@@ -1437,20 +1470,7 @@ async function renderSlotToCanvas(
     }
 
     // Text overlay (base from template or user-added via overrides)
-    {
-      const override = textOverrides[slotIndex];
-      if (slot.textOverlay) {
-        const resolved = resolveTextOverlay(slot.textOverlay, override);
-        if (resolved) drawTextOverlay(ctx, resolved, width, height, t);
-      } else if (override && typeof override === 'object' && override !== null) {
-        // User-added text overlay (no base)
-        const defaults: TextOverlay = {
-          text: 'Your Text', position: 'center', fontSize: 'lg',
-          fontWeight: 'bold', animation: 'fade-in', color: '#ffffff',
-        };
-        drawTextOverlay(ctx, { ...defaults, ...override } as TextOverlay, width, height, t);
-      }
-    }
+    drawSlotText(ctx, slot, textOverrides[slotIndex], width, height, t);
 
     // Yield to browser every 5 frames to prevent blocking
     if (frame % 5 === 0) {
@@ -1592,12 +1612,7 @@ async function renderSlotFramesToFFmpeg(
       drawParticles(ctx, particles, width, height);
       particles = updateParticles(particles, 1 / fps, width, height);
     }
-    if (slot.textOverlay) {
-      const resolved = resolveTextOverlay(slot.textOverlay, textOverrides[slotIndex]);
-      if (resolved) {
-        drawTextOverlay(ctx, resolved, width, height, t);
-      }
-    }
+    drawSlotText(ctx, slot, textOverrides[slotIndex], width, height, t);
 
     // Write frame to ffmpeg virtual FS
     await writeFrame(ffmpeg, canvas, frameNumber);
@@ -1749,12 +1764,7 @@ async function renderSlotFramesToFFmpegWithSource(
       drawParticles(ctx, particles, width, height);
       particles = updateParticles(particles, 1 / fps, width, height);
     }
-    if (slot.textOverlay) {
-      const resolved = resolveTextOverlay(slot.textOverlay, textOverrides[slotIndex]);
-      if (resolved) {
-        drawTextOverlay(ctx, resolved, width, height, t);
-      }
-    }
+    drawSlotText(ctx, slot, textOverrides[slotIndex], width, height, t);
 
     await writeFrame(ffmpeg, canvas, frameNumber);
     frameNumber++;

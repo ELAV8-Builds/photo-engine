@@ -15,10 +15,14 @@ import { hasModel, ollamaHealth, OllamaUnavailableError } from '../ai/ollama';
 import { getSettings } from '../settings/store';
 import { loadCuration, removeCuration } from '../curation/record';
 import { selectForMontage, type SelectOptions } from '../curation/select';
+import { buildStoryContext, defaultKeys, type ContextSource } from '../story/context';
+import { generateStoryPlan, loadStoryPlan, saveStoryPlan } from '../story/generate';
+import { heuristicStoryPlan } from '../story/heuristic';
+import { createOllamaProvider } from '../ai/ollama';
 import { addRoot, getRoot, listRoots, removeRoot } from './registry';
 import { dropRootIndex, findItem, getItemsForRoot, patchItem, toDto, type IndexedItem } from './index-store';
 import { enqueueItemWork, planItemJobs } from './work';
-import type { CurationRecord, LibraryItem, LibraryItemsPage, LibraryRoot, MediaKind, MontagePick } from '@/types/library';
+import type { CurationRecord, LibraryItem, LibraryItemsPage, LibraryRoot, MediaKind, MontagePick, StoryPlan } from '@/types/library';
 
 assertServer();
 
@@ -212,19 +216,65 @@ export async function getCurationRecord(itemId: string): Promise<CurationRecord 
   return loadCuration(item.id);
 }
 
-/** Build a montage plan across every root from the current curation records. */
-export async function planMontage(opts: SelectOptions): Promise<{ picks: MontagePick[]; considered: number }> {
-  await ensureBootstrapped();
-  const records = new Map<string, CurationRecord>();
-  const items: LibraryItem[] = [];
+/** Every curated item (DTO) with its record, across all roots. */
+async function curatedSources(): Promise<Map<string, ContextSource>> {
+  const out = new Map<string, ContextSource>();
   for (const root of await listRoots()) {
     for (const item of await getItemsForRoot(root.id)) {
       if (item.status.curate !== 'ready') continue;
-      const rec = await loadCuration(item.id);
-      if (!rec) continue;
-      records.set(item.id, rec);
-      items.push(toDto(item));
+      const record = await loadCuration(item.id);
+      if (record) out.set(item.id, { item: toDto(item), record });
     }
   }
+  return out;
+}
+
+/** Build a montage plan across every root from the current curation records. */
+export async function planMontage(opts: SelectOptions): Promise<{ picks: MontagePick[]; considered: number }> {
+  await ensureBootstrapped();
+  const sources = await curatedSources();
+  const records = new Map<string, CurationRecord>();
+  const items: LibraryItem[] = [];
+  sources.forEach(({ item, record }, id) => {
+    records.set(id, record);
+    items.push(item);
+  });
   return { picks: selectForMontage(items, records, opts), considered: items.length };
+}
+
+// ---------------------------------------------------------------------------
+// Story
+// ---------------------------------------------------------------------------
+
+export interface StoryOptions {
+  /** Shots in project order (`itemId` or `itemId#n`). Defaults to every curated shot by time. */
+  keys?: string[];
+  /** Ignore the cached plan for this shot list. */
+  force?: boolean;
+}
+
+/**
+ * Story plan for a shot list: cached per list, model-written when Ollama is
+ * up, heuristic otherwise. Runs under the shared inference lock so it
+ * interleaves with (never overlaps) background grading.
+ */
+export async function planStory(opts: StoryOptions = {}): Promise<{ plan: StoryPlan; cached: boolean }> {
+  await ensureBootstrapped();
+  const sources = await curatedSources();
+  const keys = opts.keys && opts.keys.length > 0 ? opts.keys : defaultKeys(sources);
+  const ctx = buildStoryContext(keys, sources);
+  if (ctx.entries.length === 0) return { plan: heuristicStoryPlan(ctx), cached: false };
+
+  if (!opts.force) {
+    const cached = await loadStoryPlan(ctx.entries.map((e) => e.key));
+    if (cached) return { plan: cached, cached: true };
+  }
+
+  const modelReady = await visionModelReady();
+  const plan = modelReady
+    ? await generateStoryPlan(ctx, { provider: createOllamaProvider((await getSettings()).visionModel) })
+    : heuristicStoryPlan(ctx);
+  if (!modelReady) log.info('story: model unavailable, heuristic plan', { shots: ctx.entries.length });
+  await saveStoryPlan(plan);
+  return { plan, cached: false };
 }

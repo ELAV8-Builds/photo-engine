@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, Suspense } from 'react';
+import { useState, useCallback, useEffect, useMemo, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Header from '@/components/Header';
 import MediaStep from '@/components/MediaStep';
@@ -8,8 +8,11 @@ import TemplateStep from '@/components/TemplateStep';
 import MusicStep from '@/components/MusicStep';
 import RenderStep from '@/components/RenderStep';
 import { MediaFile, MusicTrack, Step, TextOverlayOverride } from '@/types';
+import type { StoryPlan } from '@/types/library';
 import { loadProject, saveProject, updateProject } from '@/lib/project-manager';
 import { SMART_TEMPLATES, expandTemplateForMedia } from '@/lib/templates';
+import { libraryApi, LibraryApiError } from '@/lib/library-client';
+import { buildStoryTextOverrides, orderMediaByStory, rolesForMedia, storyKeysForMedia, templateIdForStyle } from '@/lib/story-apply';
 import type { MixerOverrides } from '@/components/TemplateMixer';
 
 function HomeContent() {
@@ -35,6 +38,50 @@ function HomeContent() {
   const selectedCount = media.filter(p => p.selected).length;
   // "Auto-pick best N" follows the chosen template's slot count; 12 makes a solid montage otherwise.
   const suggestedPickCount = (selectedTemplate && SMART_TEMPLATES.find((t) => t.id === selectedTemplate)?.mediaCount) || 12;
+
+  // Story layer (Phase 3): a plan is written for the current library shots and applied on request.
+  const [storyPlan, setStoryPlan] = useState<StoryPlan | null>(null);
+  const [storyBusy, setStoryBusy] = useState(false);
+  const [storyError, setStoryError] = useState<string | null>(null);
+  const [storyApplied, setStoryApplied] = useState(false);
+  const storyKeys = useMemo(() => storyKeysForMedia(media), [media]);
+
+  const generateStory = useCallback(async (force: boolean) => {
+    if (storyKeys.length === 0) return;
+    setStoryBusy(true);
+    setStoryError(null);
+    try {
+      const { plan } = await libraryApi.storyPlan({ keys: storyKeys, force });
+      setStoryPlan(plan);
+      setStoryApplied(false);
+    } catch (err) {
+      setStoryError(err instanceof LibraryApiError || err instanceof Error ? err.message : 'Could not write the story');
+    } finally {
+      setStoryBusy(false);
+    }
+  }, [storyKeys]);
+
+  /** Select the recommended template, lead with the opener, end on the closer, and put the titles on the slots. */
+  const applyStory = useCallback(() => {
+    if (!storyPlan) return;
+    const templateId = templateIdForStyle(storyPlan.templateStyle) ?? selectedTemplate;
+    const base = templateId ? SMART_TEMPLATES.find((t) => t.id === templateId) : null;
+    const ordered = orderMediaByStory(media, storyPlan);
+    setMedia(ordered);
+    if (templateId) setSelectedTemplate(templateId);
+    setMixerOverrides({});
+    if (base) {
+      const roles = rolesForMedia(ordered, storyPlan);
+      const expanded = expandTemplateForMedia(base, roles.length, undefined, roles);
+      setTextOverrides(buildStoryTextOverrides(expanded, storyPlan, ordered, base));
+    }
+    setStoryApplied(true);
+  }, [storyPlan, media, selectedTemplate]);
+
+  // Applying is a snapshot; editing the shot list afterwards means the story no longer matches.
+  useEffect(() => {
+    if (storyPlan && storyApplied && storyKeys.join('|') !== storyPlan.keys.join('|')) setStoryApplied(false);
+  }, [storyKeys, storyPlan, storyApplied]);
 
   // Load project from URL query param
   useEffect(() => {
@@ -174,6 +221,15 @@ function HomeContent() {
             onMixerOverridesChange={setMixerOverrides}
             onNext={() => setStep('music')}
             onBack={() => setStep('media')}
+            story={{
+              plan: storyPlan,
+              busy: storyBusy,
+              error: storyError,
+              available: storyKeys.length > 0,
+              applied: storyApplied,
+              onGenerate: generateStory,
+              onApply: applyStory,
+            }}
           />
         )}
 
@@ -187,6 +243,7 @@ function HomeContent() {
             selectedTemplate={selectedTemplate}
             onNext={() => setStep('render')}
             onBack={() => setStep('template')}
+            storyPlan={storyApplied ? storyPlan : null}
           />
         )}
 
@@ -205,6 +262,7 @@ function HomeContent() {
             onBack={() => setStep('music')}
             onExportComplete={handleSaveProject}
             musicTracks={musicTracks}
+            storyPlan={storyApplied ? storyPlan : null}
           />
         )}
       </main>

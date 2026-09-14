@@ -50,5 +50,5 @@ export function middleware(req: NextRequest): NextResponse {
 }
 
 export const config = {
-  matcher: ['/api/library/:path*', '/api/media/:path*', '/api/jobs/:path*', '/api/settings/:path*', '/api/system/:path*', '/api/curation/:path*'],
+  matcher: ['/api/library/:path*', '/api/media/:path*', '/api/jobs/:path*', '/api/settings/:path*', '/api/system/:path*', '/api/curation/:path*', '/api/story/:path*'],
 };

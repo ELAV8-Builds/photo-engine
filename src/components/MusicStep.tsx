@@ -2,7 +2,9 @@
 
 import { useRef, useState, useEffect, useCallback } from 'react';
 import { MusicTrack, MediaFile } from '@/types';
+import type { StoryPlan } from '@/types/library';
 import { SMART_TEMPLATES, expandTemplateForMedia, formatDuration as fmtDuration } from '@/lib/templates';
+import { rolesForMedia } from '@/lib/story-apply';
 import { saveSongFromTrack, songExists, getSongCount } from '@/lib/song-library';
 import SongLibrary from './SongLibrary';
 
@@ -17,6 +19,8 @@ interface MusicStepProps {
   selectedTemplate?: string | null;
   onNext: () => void;
   onBack: () => void;
+  /** Applied story plan (Phase 3): shapes slot durations and suggests a music mood. */
+  storyPlan?: StoryPlan | null;
 }
 
 export default function MusicStep({
@@ -29,6 +33,7 @@ export default function MusicStep({
   selectedTemplate,
   onNext,
   onBack,
+  storyPlan = null,
 }: MusicStepProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -42,7 +47,8 @@ export default function MusicStep({
 
   const selectedMedia = photos.filter(p => p.selected);
   const baseTemplate = selectedTemplate ? SMART_TEMPLATES.find(t => t.id === selectedTemplate) : null;
-  const template = baseTemplate ? expandTemplateForMedia(baseTemplate, selectedMedia.length) : null;
+  const storyRoles = storyPlan ? rolesForMedia(photos, storyPlan) : undefined;
+  const template = baseTemplate ? expandTemplateForMedia(baseTemplate, selectedMedia.length, undefined, storyRoles) : null;
   const totalDuration = template ? template.totalDuration : selectedMedia.length * (durationPerPhoto ?? 3.5);
 
   // Total music duration from all tracks
@@ -226,6 +232,12 @@ export default function MusicStep({
           {template && <span className="text-text-muted"> ({template.name})</span>}
           {' '}&mdash; Add one or more songs. They play in order.
         </p>
+        {storyPlan && (storyPlan.musicMood || storyPlan.pacing) && (
+          <p className="text-xs text-text-secondary mt-2" role="note">
+            Story suggests <span className="text-accent-gold">{storyPlan.musicMood || 'a fitting track'}</span> with{' '}
+            <span className="text-accent-gold">{storyPlan.pacing}</span> pacing.
+          </p>
+        )}
       </div>
 
       {/* Track List */}

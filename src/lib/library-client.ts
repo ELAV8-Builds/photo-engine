@@ -16,6 +16,7 @@ import type {
   MontagePick,
   QueueSnapshot,
   ServerSettings,
+  StoryPlan,
   SystemCapabilities,
 } from '@/types/library';
 
@@ -90,6 +91,10 @@ export const libraryApi = {
   curation: async (id: string) => (await request<{ record: CurationRecord }>(`/api/library/items/${encodeURIComponent(id)}/curation`)).record,
   select: (opts: { slots: number; videoRatio?: number; chronological?: boolean; exclude?: string[] }) =>
     request<{ picks: MontagePick[]; considered: number }>('/api/curation/select', { method: 'POST', body: JSON.stringify(opts) }),
+
+  /** Story plan for the given shots (project order). Model-written when Ollama is up, heuristic otherwise. */
+  storyPlan: (opts: { keys?: string[]; force?: boolean } = {}) =>
+    request<{ plan: StoryPlan; cached: boolean }>('/api/story/plan', { method: 'POST', body: JSON.stringify(opts) }),
 };
 
 // ---------------------------------------------------------------------------

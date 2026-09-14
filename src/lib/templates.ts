@@ -39,9 +39,10 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
       { text: 'Your Story', position: 'center', fontSize: 'xl', fontWeight: 'bold', animation: 'fade-in', color: '#fff' },
       { text: 'The End', position: 'center', fontSize: 'xl', fontWeight: 'bold', animation: 'fade-in', color: '#fff' },
     ],
+    // Deliberate mix: 5 s hero slots take video moments, 3–4 s slots take photos (Phase 3).
     slots: [
       {
-        slotType: 'any', duration: 5, transition: 'morphDissolve', effect: 'dolly-in', holdPoint: 'face',
+        slotType: 'video', duration: 5, transition: 'morphDissolve', effect: 'dolly-in', holdPoint: 'face',
         motionIntensity: 0.5, motionEasing: 'easeInOut', transitionDuration: 0.6,
         postEffects: [
           { effect: 'colorGrade', intensity: 0.7, params: { preset: 'warm-cinematic' } },
@@ -51,7 +52,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
         textOverlay: { text: 'Your Story', position: 'center', fontSize: 'xl', fontWeight: 'bold', animation: 'fade-in', color: '#fff' },
       },
       {
-        slotType: 'any', duration: 3, transition: 'fade', effect: 'crane-up', holdPoint: 'center',
+        slotType: 'photo', duration: 3, transition: 'fade', effect: 'crane-up', holdPoint: 'center',
         motionIntensity: 0.4, motionEasing: 'easeOut', transitionDuration: 0.8,
         postEffects: [
           { effect: 'colorGrade', intensity: 0.7, params: { preset: 'warm-cinematic' } },
@@ -60,7 +61,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
         ],
       },
       {
-        slotType: 'any', duration: 4, transition: 'fade', effect: 'drift', holdPoint: 'rule-of-thirds',
+        slotType: 'photo', duration: 4, transition: 'fade', effect: 'drift', holdPoint: 'rule-of-thirds',
         motionIntensity: 0.6, motionEasing: 'smoothStep',
         postEffects: [
           { effect: 'colorGrade', intensity: 0.7, params: { preset: 'warm-cinematic' } },
@@ -70,7 +71,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
         textOverlay: { text: 'Every Moment Matters', position: 'bottom', fontSize: 'md', fontWeight: 'bold', animation: 'fade-in', color: '#fff' },
       },
       {
-        slotType: 'any', duration: 5, transition: 'morphDissolve', effect: 'ken-burns', holdPoint: 'face',
+        slotType: 'video', duration: 5, transition: 'morphDissolve', effect: 'ken-burns', holdPoint: 'face',
         motionIntensity: 0.6, transitionDuration: 0.6,
         postEffects: [
           { effect: 'colorGrade', intensity: 0.7, params: { preset: 'warm-cinematic' } },
@@ -80,7 +81,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
         ],
       },
       {
-        slotType: 'any', duration: 3, transition: 'fade', effect: 'rack-focus', holdPoint: 'center',
+        slotType: 'photo', duration: 3, transition: 'fade', effect: 'rack-focus', holdPoint: 'center',
         motionIntensity: 0.5, motionEasing: 'easeInOut',
         postEffects: [
           { effect: 'colorGrade', intensity: 0.7, params: { preset: 'warm-cinematic' } },
@@ -90,7 +91,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
         textOverlay: { text: 'A Journey Begins', position: 'center', fontSize: 'lg', fontWeight: 'bold', animation: 'slide-up', color: '#fff' },
       },
       {
-        slotType: 'any', duration: 4, transition: 'fade', effect: 'dolly-out', holdPoint: 'rule-of-thirds',
+        slotType: 'photo', duration: 4, transition: 'fade', effect: 'dolly-out', holdPoint: 'rule-of-thirds',
         motionIntensity: 0.5, motionEasing: 'easeOut',
         postEffects: [
           { effect: 'colorGrade', intensity: 0.7, params: { preset: 'warm-cinematic' } },
@@ -99,7 +100,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
         ],
       },
       {
-        slotType: 'any', duration: 5, transition: 'morphDissolve', effect: 'crane-down', holdPoint: 'face',
+        slotType: 'video', duration: 5, transition: 'morphDissolve', effect: 'crane-down', holdPoint: 'face',
         motionIntensity: 0.5, transitionDuration: 0.6,
         postEffects: [
           { effect: 'colorGrade', intensity: 0.7, params: { preset: 'warm-cinematic' } },
@@ -110,7 +111,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
         textOverlay: { text: 'The Beauty Within', position: 'top', fontSize: 'md', fontWeight: 'bold', animation: 'fade-in', color: '#fff' },
       },
       {
-        slotType: 'any', duration: 3, transition: 'fade', effect: 'slow-zoom', holdPoint: 'center',
+        slotType: 'photo', duration: 3, transition: 'fade', effect: 'slow-zoom', holdPoint: 'center',
         motionIntensity: 0.4, transitionDuration: 1.0,
         postEffects: [
           { effect: 'colorGrade', intensity: 0.7, params: { preset: 'warm-cinematic' } },
@@ -147,7 +148,7 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
     ],
     slots: [
       {
-        slotType: 'any', duration: 1.5, transition: 'whipBlur', effect: 'pulse-zoom', holdPoint: 'center',
+        slotType: 'photo', duration: 1.5, transition: 'whipBlur', effect: 'pulse-zoom', holdPoint: 'center',
         motionIntensity: 0.9, transitionDuration: 0.25, speedPreset: 'ramp-classic',
         postEffects: [
           { effect: 'colorGrade', intensity: 0.6, params: { preset: 'high-contrast' } },
@@ -155,56 +156,56 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
         textOverlay: { text: "LET'S GO", position: 'center', fontSize: 'xl', fontWeight: 'black', animation: 'scale-pop', color: '#FF6B00' },
       },
       {
-        slotType: 'any', duration: 1, transition: 'slideRight', effect: 'whip-pan', holdPoint: 'face',
+        slotType: 'photo', duration: 1, transition: 'slideRight', effect: 'whip-pan', holdPoint: 'face',
         motionIntensity: 0.8, transitionDuration: 0.2,
         postEffects: [{ effect: 'colorGrade', intensity: 0.6, params: { preset: 'high-contrast' } }],
       },
       {
-        slotType: 'any', duration: 2, transition: 'flashWhite', effect: 'speed-ramp', holdPoint: 'face',
+        slotType: 'video', duration: 2, transition: 'flashWhite', effect: 'speed-ramp', holdPoint: 'face',
         motionIntensity: 0.8, transitionDuration: 0.15, speedPreset: 'ramp-dramatic',
         postEffects: [{ effect: 'colorGrade', intensity: 0.6, params: { preset: 'high-contrast' } }],
         textOverlay: { text: 'NO LIMITS', position: 'center', fontSize: 'lg', fontWeight: 'black', animation: 'scale-pop', color: '#FF6B00' },
       },
       {
-        slotType: 'any', duration: 1.5, transition: 'whipBlur', effect: 'bounce', holdPoint: 'center',
+        slotType: 'photo', duration: 1.5, transition: 'whipBlur', effect: 'bounce', holdPoint: 'center',
         motionIntensity: 0.9, transitionDuration: 0.2,
         postEffects: [{ effect: 'colorGrade', intensity: 0.6, params: { preset: 'high-contrast' } }],
       },
       {
-        slotType: 'any', duration: 1, transition: 'slideLeft', effect: 'dolly-in', holdPoint: 'face',
+        slotType: 'photo', duration: 1, transition: 'slideLeft', effect: 'dolly-in', holdPoint: 'face',
         motionIntensity: 0.8, transitionDuration: 0.2,
         postEffects: [{ effect: 'colorGrade', intensity: 0.6, params: { preset: 'high-contrast' } }],
         textOverlay: { text: 'SEND IT', position: 'bottom', fontSize: 'md', fontWeight: 'black', animation: 'slide-up', color: '#fff' },
       },
       {
-        slotType: 'any', duration: 2, transition: 'cubeRotate', effect: 'orbit', holdPoint: 'center',
+        slotType: 'video', duration: 2, transition: 'cubeRotate', effect: 'orbit', holdPoint: 'center',
         motionIntensity: 0.7, transitionDuration: 0.3, speedPreset: 'ramp-classic',
         postEffects: [{ effect: 'colorGrade', intensity: 0.6, params: { preset: 'high-contrast' } }],
       },
       {
-        slotType: 'any', duration: 1.5, transition: 'flashBlack', effect: 'pulse-zoom', holdPoint: 'face',
+        slotType: 'photo', duration: 1.5, transition: 'flashBlack', effect: 'pulse-zoom', holdPoint: 'face',
         motionIntensity: 0.9, transitionDuration: 0.15,
         postEffects: [{ effect: 'colorGrade', intensity: 0.6, params: { preset: 'high-contrast' } }],
         textOverlay: { text: 'ALL GAS', position: 'center', fontSize: 'lg', fontWeight: 'black', animation: 'scale-pop', color: '#FF6B00' },
       },
       {
-        slotType: 'any', duration: 1, transition: 'whipBlur', effect: 'whip-pan', holdPoint: 'center',
+        slotType: 'photo', duration: 1, transition: 'whipBlur', effect: 'whip-pan', holdPoint: 'center',
         motionIntensity: 0.8, transitionDuration: 0.2,
         postEffects: [{ effect: 'colorGrade', intensity: 0.6, params: { preset: 'high-contrast' } }],
       },
       {
-        slotType: 'any', duration: 2, transition: 'flipCard', effect: 'speed-ramp', holdPoint: 'face',
+        slotType: 'video', duration: 2, transition: 'flipCard', effect: 'speed-ramp', holdPoint: 'face',
         motionIntensity: 0.8, transitionDuration: 0.25, speedPreset: 'ramp-pulse',
         postEffects: [{ effect: 'colorGrade', intensity: 0.6, params: { preset: 'high-contrast' } }],
         textOverlay: { text: 'NO BRAKES', position: 'center', fontSize: 'md', fontWeight: 'black', animation: 'glitch-in', color: '#fff' },
       },
       {
-        slotType: 'any', duration: 1.5, transition: 'slideLeft', effect: 'bounce', holdPoint: 'center',
+        slotType: 'photo', duration: 1.5, transition: 'slideLeft', effect: 'bounce', holdPoint: 'center',
         motionIntensity: 0.9, transitionDuration: 0.2,
         postEffects: [{ effect: 'colorGrade', intensity: 0.6, params: { preset: 'high-contrast' } }],
       },
       {
-        slotType: 'any', duration: 2, transition: 'flashWhite', effect: 'dolly-out', holdPoint: 'face',
+        slotType: 'video', duration: 2, transition: 'flashWhite', effect: 'dolly-out', holdPoint: 'face',
         motionIntensity: 0.7, transitionDuration: 0.2, speedPreset: 'ramp-classic',
         postEffects: [{ effect: 'colorGrade', intensity: 0.6, params: { preset: 'high-contrast' } }],
         textOverlay: { text: 'FULL SEND', position: 'center', fontSize: 'lg', fontWeight: 'black', animation: 'scale-pop', color: '#FF6B00' },
@@ -1270,16 +1271,42 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
  * Given a template and a set of media, auto-assign media to slots.
  * If more media than slots, extras are distributed evenly.
  * If fewer media, media is repeated to fill all slots.
+ *
+ * When `kinds` is supplied, slots typed `photo` / `video` take the next unused
+ * media of that kind (falling back to any kind when it runs out) and `any`
+ * slots take the next unused media in order. Every media item is used once
+ * before any repeats, and order within a kind stays chronological. Without
+ * `kinds` the assignment is the original round-robin.
  */
 export function assignMediaToSlots(
   template: SmartTemplate,
-  mediaIds: string[]
+  mediaIds: string[],
+  kinds?: ReadonlyMap<string, 'photo' | 'video'>,
 ): string[] {
   if (mediaIds.length === 0) return template.slots.map(() => '');
 
+  if (!kinds) {
+    const assigned: string[] = [];
+    for (let i = 0; i < template.slots.length; i++) {
+      assigned.push(mediaIds[i % mediaIds.length]);
+    }
+    return assigned;
+  }
+
+  let pool = [...mediaIds];
   const assigned: string[] = [];
-  for (let i = 0; i < template.slots.length; i++) {
-    assigned.push(mediaIds[i % mediaIds.length]);
+  const takeFrom = (predicate: (id: string) => boolean): string | undefined => {
+    const idx = pool.findIndex(predicate);
+    if (idx === -1) return undefined;
+    return pool.splice(idx, 1)[0];
+  };
+  for (const slot of template.slots) {
+    if (pool.length === 0) pool = [...mediaIds]; // wrap: repeat media when slots outnumber it
+    const wanted = slot.slotType;
+    const id =
+      (wanted === 'photo' || wanted === 'video' ? takeFrom((m) => kinds.get(m) === wanted) : undefined) ??
+      takeFrom(() => true)!;
+    assigned.push(id);
   }
   return assigned;
 }
@@ -1325,15 +1352,21 @@ export function getSlotMediaIds(
  * create enough slots for ALL media. The template's visual style,
  * transitions, effects, and theme are preserved.
  *
- * If mediaCount <= template.slots.length, returns the original template.
+ * If mediaCount <= template.slots.length, returns the original template
+ * (unless `roles` asks for shaping, see below).
  * If targetDuration is provided, adjusts per-slot durations to hit that target.
+ *
+ * `roles` (Phase 3 story layer) is one entry per slot: `breather` slots hold
+ * a little longer, `opener`/`closer` keep the hero speed ramps and become
+ * kind-agnostic so the story's chosen shot always lands there.
  */
 export function expandTemplateForMedia(
   template: SmartTemplate,
   mediaCount: number,
   targetDuration?: number,
+  roles?: ReadonlyArray<'opener' | 'beat' | 'breather' | 'closer'>,
 ): SmartTemplate {
-  if (mediaCount <= template.slots.length) return template;
+  if (mediaCount <= template.slots.length) return roles ? applyShotRoles(template, roles) : template;
 
   const baseSlots = template.slots;
   const baseCount = baseSlots.length;
@@ -1438,13 +1471,47 @@ export function expandTemplateForMedia(
     newTotalDuration = expandedSlots.reduce((sum, s) => sum + s.duration, 0);
   }
 
-  return {
+  const expanded: SmartTemplate = {
     ...template,
     slots: expandedSlots,
     mediaCount,
     totalDuration: Math.round(newTotalDuration * 10) / 10,
     // Default fade-out of 0.8s unless template explicitly sets it
     fadeOutDuration: template.fadeOutDuration ?? 0.8,
+  };
+  return roles ? applyShotRoles(expanded, roles) : expanded;
+}
+
+/** Longest a breather may hold; keeps calm shots from stalling a fast template. */
+const BREATHER_MAX_SEC = 6;
+
+/**
+ * Shape slots by story role. Pure: returns a new template; slot indices are
+ * unchanged so text overrides keep pointing at the same slots.
+ */
+export function applyShotRoles(
+  template: SmartTemplate,
+  roles: ReadonlyArray<'opener' | 'beat' | 'breather' | 'closer'>,
+): SmartTemplate {
+  const slots = template.slots.map((slot, i) => {
+    const role = roles[i];
+    if (!role || role === 'beat') return slot;
+    const next: TemplateSlot = { ...slot, slotType: 'any' };
+    if (role === 'breather') {
+      next.duration = Math.min(BREATHER_MAX_SEC, Math.round(slot.duration * 1.5 * 10) / 10);
+      next.speedPreset = 'normal';
+      next.motionIntensity = Math.min(slot.motionIntensity ?? 0.5, 0.35);
+    } else if (role === 'opener') {
+      next.speedPreset = 'dramatic';
+    } else {
+      next.speedPreset = 'decelerate';
+    }
+    return next;
+  });
+  return {
+    ...template,
+    slots,
+    totalDuration: Math.round(slots.reduce((sum, s) => sum + s.duration, 0) * 10) / 10,
   };
 }
 
