@@ -78,18 +78,31 @@ export async function saveCuration(record: CurationRecord): Promise<void> {
 const MAX_HIGHLIGHTS = 8;
 
 /**
- * Forget an item's curation entirely: record, partial grades, and every rendered
- * highlight clip/thumbnail. A re-run chooses new windows under the same
- * filenames, so stale artefacts must not survive to be mistaken for finished
- * work. Remembered user views (`user-views.ts`) are deliberately kept, and so
- * are yaw-editor frames: Phase 7 names them by source time, so they stay
- * correct for whatever windows a re-analysis picks (the GC reclaims frames no
- * window covers any more).
+ * Phase 9 (§3.1): forget everything a re-analysis must not reuse — partial
+ * grades and every rendered highlight clip/thumbnail (a re-run picks windows
+ * under the same filenames, so stale artefacts must not survive to be mistaken
+ * for finished work) — but keep the record itself. The old record anchors
+ * window identity (`inheritHighlightIndices`) until the fresh record atomically
+ * overwrites it. Remembered user views (`user-views.ts`) are deliberately
+ * kept, and so are yaw-editor frames: Phase 7 names them by source time, so
+ * they stay correct for whatever windows a re-analysis picks (the GC reclaims
+ * frames no window covers any more).
+ */
+export async function removeCurationArtifacts(itemId: string): Promise<void> {
+  await fsp.rm(curationPartialPath(itemId), { force: true });
+  for (let n = 0; n < MAX_HIGHLIGHTS; n++) await removeHighlightArtifacts(itemId, n);
+}
+
+/**
+ * Forget an item's curation entirely, record included. Since Phase 9 the force
+ * re-analysis path keeps the record as its identity anchor
+ * (`removeCurationArtifacts`); an item that disappears for good is the GC's
+ * business, so nothing calls this right now — kept as the complete-removal
+ * counterpart until a caller needs it or the owner approves deleting it.
  */
 export async function removeCuration(itemId: string): Promise<void> {
   await fsp.rm(curationPath(itemId), { force: true });
-  await fsp.rm(curationPartialPath(itemId), { force: true });
-  for (let n = 0; n < MAX_HIGHLIGHTS; n++) await removeHighlightArtifacts(itemId, n);
+  await removeCurationArtifacts(itemId);
 }
 
 /** Grades keyed by sample time (string seconds) for one model. */

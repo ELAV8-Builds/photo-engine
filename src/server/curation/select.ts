@@ -37,7 +37,8 @@ export function pickId(itemId: string, highlightIndex?: number): string {
 /** A video highlight is playable when its flat proxy exists, or when the clip itself is flat / has a full proxy. */
 export function highlightReady(item: LibraryItem, record: CurationRecord, index: number): boolean {
   if (item.status.probe !== 'ready') return false;
-  const h = record.highlights[index];
+  // Phase 9 (§3.1): indices survive re-analysis, so they are no longer dense — resolve by field, not position.
+  const h = record.highlights.find((w) => w.index === index);
   if (!h) return false;
   if (!item.is360) return true;
   return h.proxy === 'ready' || item.status.proxy360 === 'ready';

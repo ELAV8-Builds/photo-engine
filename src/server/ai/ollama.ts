@@ -34,6 +34,17 @@ const REQUEST_TIMEOUT_MS = 120_000;
 const HEALTH_TIMEOUT_MS = 3_000;
 const KEEP_ALIVE = '5m';
 
+/**
+ * Phase 9 (§3.3): grading is pinned to `temperature: 0` plus this seed so a
+ * forced re-analysis reproduces run-to-run. Measured on qwen3.5:9b / Ollama
+ * 0.33.3: unpinned (temp 0.1) varied per call on the same frame — including a
+ * quality "dark" ↔ "ok" flip on dim frames, the exact mechanism behind the
+ * 0.42 ↔ 0.6 fused-score drift Phase 8 saw — while pinned calls were
+ * byte-identical regardless of request order. Story writing and ad-hoc
+ * descriptions stay unpinned (temp 0.1) so "Regenerate" keeps its variety.
+ */
+const GRADE_SEED = 42;
+
 export interface OllamaHealth {
   running: boolean;
   version?: string;
@@ -111,14 +122,15 @@ export class OllamaProvider implements VisionProvider {
 
   async gradeFrame(jpeg: Buffer, ctx: InferenceContext = {}): Promise<FrameGrade> {
     const image = jpeg.toString('base64');
-    const first = await this.chat(FRAME_GRADE_PROMPT, { image, json: true, numPredict: 160, signal: ctx.signal });
+    const first = await this.chat(FRAME_GRADE_PROMPT, { image, json: true, numPredict: 160, deterministic: true, signal: ctx.signal });
     try {
       return parseFrameGrade(safeJson(first), first);
     } catch (err) {
       if (!(err instanceof InvalidModelOutputError)) throw err;
       log.debug('retrying invalid grade', { label: ctx.label, raw: first.slice(0, 200) });
     }
-    const second = await this.chat(FRAME_GRADE_PROMPT + FRAME_GRADE_RETRY_SUFFIX, { image, json: true, numPredict: 160, signal: ctx.signal });
+    // The retry prompt differs (suffix), so pinning cannot replay the same invalid answer.
+    const second = await this.chat(FRAME_GRADE_PROMPT + FRAME_GRADE_RETRY_SUFFIX, { image, json: true, numPredict: 160, deterministic: true, signal: ctx.signal });
     return parseFrameGrade(safeJson(second), second);
   }
 
@@ -141,7 +153,7 @@ export class OllamaProvider implements VisionProvider {
 
   private async chat(
     content: string,
-    opts: { image?: string; json: boolean; numPredict: number; signal?: AbortSignal },
+    opts: { image?: string; json: boolean; numPredict: number; deterministic?: boolean; signal?: AbortSignal },
   ): Promise<string> {
     const body = {
       model: this.model,
@@ -149,7 +161,11 @@ export class OllamaProvider implements VisionProvider {
       format: opts.json ? 'json' : undefined,
       think: false,
       keep_alive: KEEP_ALIVE,
-      options: { temperature: 0.1, num_predict: opts.numPredict, ...(this.threads !== undefined ? { num_thread: this.threads } : {}) },
+      options: {
+        ...(opts.deterministic ? { temperature: 0, seed: GRADE_SEED } : { temperature: 0.1 }),
+        num_predict: opts.numPredict,
+        ...(this.threads !== undefined ? { num_thread: this.threads } : {}),
+      },
       messages: [{ role: 'user', content, ...(opts.image ? { images: [opts.image] } : {}) }],
     };
 

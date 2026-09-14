@@ -826,6 +826,12 @@ export default function RenderStep(props: RenderStepProps) {
         return;
       }
       console.error('[Export] MP4 render failed:', e);
+      // §3.2 (Phase 9): a *failure* must also leave a clean slate. The worker's
+      // virtual FS still holds this run's frames; because ffmpeg reads
+      // frame_%06d.jpg sequentially, a shorter next export would mux these
+      // stale frames into its output. Terminate the worker — the next export
+      // pays the core reload, same as after a cancel.
+      resetFFmpeg();
       setProgress({
         status: 'error',
         percent: 0,
@@ -1338,20 +1344,6 @@ function getResolution(aspect: string, quality: string): { width: number; height
 }
 
 // ====================================================================
-//  Hold black frames for a given duration (seconds) — used for gaps
-// ====================================================================
-
-async function holdFrames(durationSeconds: number): Promise<void> {
-  const fps = 30;
-  const frames = Math.round(durationSeconds * fps);
-  for (let f = 0; f < frames; f++) {
-    if (f % 5 === 0) {
-      await new Promise(r => requestAnimationFrame(r));
-    }
-  }
-}
-
-// ====================================================================
 //  Load an image from a MediaFile (using thumbnailUrl for videos)
 // ====================================================================
 
@@ -1463,22 +1455,6 @@ function getFocusPoint(
   }
   // center
   return { fx: 0.5, fy: 0.5 };
-}
-
-// ====================================================================
-//  Draw a cover-fit image onto the canvas (with optional transform)
-// ====================================================================
-
-function drawCover(
-  ctx: CanvasRenderingContext2D,
-  img: HTMLImageElement,
-  cw: number,
-  ch: number,
-): void {
-  const scale = Math.max(cw / img.naturalWidth, ch / img.naturalHeight);
-  const dw = img.naturalWidth * scale;
-  const dh = img.naturalHeight * scale;
-  ctx.drawImage(img, (cw - dw) / 2, (ch - dh) / 2, dw, dh);
 }
 
 const USER_TEXT_DEFAULTS: TextOverlay = {

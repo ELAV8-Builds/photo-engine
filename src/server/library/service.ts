@@ -13,7 +13,7 @@ import { registerAllHandlers } from '../jobs/handlers';
 import { startThermalWatchdog } from '../jobs/thermal';
 import { hasModel, ollamaHealth, OllamaUnavailableError } from '../ai/ollama';
 import { budgetFor, getSettings } from '../settings/store';
-import { loadCuration, removeCuration, removeHighlightArtifacts, saveCuration } from '../curation/record';
+import { loadCuration, removeCurationArtifacts, removeHighlightArtifacts, saveCuration } from '../curation/record';
 import { clampPath } from '../media/pan';
 import { panDecision, simplifyPath } from '../analysis/pan-plan';
 import { rememberedFromWindow, rememberUserView, rememberUserViewsFrom } from '../curation/user-views';
@@ -210,7 +210,10 @@ export async function analyseItems(opts: AnalyseOptions = {}): Promise<{ enqueue
         // Phase 6: hand-set views outlive the record they were chosen in.
         const previous = await loadCuration(item.id);
         if (previous) await rememberUserViewsFrom(previous);
-        await removeCuration(item.id);
+        // Phase 9 (§3.1): artefacts and partial grades go, but the record stays
+        // on disk until the fresh one overwrites it — the curate handler matches
+        // its windows by time overlap so indices (project references) survive.
+        await removeCurationArtifacts(item.id);
         // A stale pan360 job would find no record and mark pan 'skipped' for good.
         cancelWhere((j) => j.itemId === item.id && (j.type === 'curate' || j.type === 'highlights' || j.type === 'pan360'));
       }

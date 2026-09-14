@@ -7,8 +7,9 @@
 
 import { v4 as uuid } from 'uuid';
 import { MediaFile, MusicTrack, TextOverlayOverride } from '@/types';
+import type { CurationRecord, LibraryItem, MontagePick } from '@/types/library';
 import { dbGetAll, dbGet, dbPut, dbDelete, dbSearch, dbCount, STORES, dbGetAllByIndex } from './db';
-import { mediaUrl } from './library-client';
+import { libraryApi, mediaUrl, montagePickToMediaFile } from './library-client';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -223,6 +224,24 @@ export async function loadProject(id: string): Promise<{
   const project = await dbGet<SavedProject>(STORES.projects, id);
   if (!project) return null;
 
+  // Phase 9 (§3.1): a saved 360 moment (`lib-<id>-hl<n>`) is re-resolved against
+  // the item's current curation record, so it plays the moment's own clip —
+  // the pre-Phase-9 loader pointed it at the whole-video proxy, which played
+  // the wrong footage under the clip-relative trims. One item+record fetch per
+  // distinct clip; the server keeps `n` on the same footage across re-analysis.
+  const momentSources = new Map<string, { item: LibraryItem; record: CurationRecord } | null>();
+  const momentItemIds = Array.from(new Set(project.mediaItems.filter((m) => m.libraryItemId && m.is360 && m.type === 'video' && HL_ID.test(m.id)).map((m) => m.libraryItemId!)));
+  await Promise.all(
+    momentItemIds.map(async (itemId) => {
+      try {
+        const [item, record] = await Promise.all([libraryApi.item(itemId), libraryApi.curation(itemId)]);
+        momentSources.set(itemId, { item, record });
+      } catch {
+        momentSources.set(itemId, null); // server down or item/record gone — fall back below
+      }
+    }),
+  );
+
   // Convert SavedMediaItems back to MediaFiles
   const media: MediaFile[] = project.mediaItems.map((item) => {
     const common = {
@@ -242,6 +261,10 @@ export async function loadProject(id: string): Promise<{
 
     // Library-backed: the local server still streams it; nothing was copied.
     if (item.libraryItemId) {
+      const hl = HL_ID.exec(item.id);
+      if (hl && item.type === 'video' && item.is360) {
+        return restoreSavedMoment(item, Number(hl[2]), momentSources.get(item.libraryItemId) ?? null, common);
+      }
       const useProxy = item.type === 'video' && !!item.is360;
       return {
         ...common,
@@ -379,6 +402,54 @@ export async function changeProjectTemplate(id: string, newTemplateId: string): 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/** `lib-<itemId>-hl<n>` — a saved reference to one moment of a library video. */
+const HL_ID = /^lib-([a-f0-9]{20})-hl(\d+)$/;
+
+/**
+ * Phase 9 (§3.1): rebuild a saved 360 moment from the item's *current* record,
+ * exactly the way a fresh auto-pick would (same URL/trim/readiness logic via
+ * `montagePickToMediaFile`). Saved trims survive when they still mean the same
+ * thing — i.e. the clip-vs-proxy mode is unchanged — because the user may have
+ * hand-trimmed; a mode flip takes the freshly computed coordinates instead.
+ * When the record or the window is gone, the moment's own clip URL is kept
+ * (a visible 404 is honest; the whole-video proxy under clip-relative trims
+ * silently played the wrong footage).
+ */
+function restoreSavedMoment(
+  saved: SavedMediaItem,
+  index: number,
+  source: { item: LibraryItem; record: CurationRecord } | null,
+  common: Omit<MediaFile, 'url'>,
+): MediaFile {
+  const win = source?.record.highlights.find((h) => h.index === index);
+  if (!source || !win) {
+    return { ...common, url: mediaUrl.highlight(saved.libraryItemId!, index), libraryItemId: saved.libraryItemId, is360: true, capturedAt: saved.capturedAt };
+  }
+  const pick: MontagePick = {
+    itemId: source.item.id,
+    kind: 'video',
+    highlightIndex: index,
+    start: win.start,
+    end: win.end,
+    highlightProxyReady: win.proxy === 'ready',
+    highlightPanReady: win.panProxy === 'ready',
+    highlightPlanetReady: win.planetProxy === 'ready',
+    viewVersion: win.view?.version,
+    score: win.score,
+    caption: win.caption,
+  };
+  const rebuilt = montagePickToMediaFile(pick, source.item, saved.order);
+  // Clip mode renders at 1920×1080; the whole-proxy fallback at 1280×720 (see montagePickToMediaFile).
+  const savedClipMode = saved.width === 1920;
+  const rebuiltClipMode = !!pick.highlightProxyReady;
+  const max = rebuilt.duration ?? 0;
+  const trims =
+    savedClipMode === rebuiltClipMode && saved.trimStart !== undefined && saved.trimEnd !== undefined
+      ? { trimStart: Math.max(0, Math.min(max, saved.trimStart)), trimEnd: Math.max(0, Math.min(max, saved.trimEnd)) }
+      : { trimStart: rebuilt.trimStart, trimEnd: rebuilt.trimEnd };
+  return { ...rebuilt, selected: saved.selected, ...trims };
+}
 
 function projectToSummary(p: SavedProject): ProjectSummary {
   return {

@@ -28,7 +28,7 @@ import { hasModel, ollamaHealth, OllamaUnavailableError } from '../ai/ollama';
 import { createProviderForKind } from '../ai';
 import { ProviderUnavailableError, type VisionProvider } from '../ai/provider';
 import { highlightPanPath, highlightPlanetPath, highlightProxyPath, loadCuration, saveCuration, summarize } from '../curation/record';
-import { applyRememberedViews, loadUserViews } from '../curation/user-views';
+import { applyRememberedViews, inheritHighlightIndices, loadUserViews } from '../curation/user-views';
 import { planViewPaths } from '../analysis/pan-plan';
 import { renderPanProxy, renderTinyPlanetProxy } from '../media/pan';
 import { cancelWhere, registerHandler, type JobContext } from './queue';
@@ -252,6 +252,14 @@ async function handleCurate(job: JobInfo, ctx: JobContext): Promise<void> {
         threads: budget.threads,
         onProgress: ctx.report,
       });
+      // Phase 9 (§3.1): the record being replaced is still on disk (the force
+      // path only removes artefacts); windows that survived the re-analysis
+      // keep their index so project references stay on the same footage.
+      const previous = await loadCuration(item.id);
+      if (previous && previous.highlights.length > 0 && record.highlights.length > 0) {
+        const kept = inheritHighlightIndices(record.highlights, previous.highlights);
+        if (kept > 0) log.info('window indices inherited', { item: item.name, inherited: kept, windows: record.highlights.length });
+      }
       // Phase 6: windows overlapping a moment the user reframed keep that view.
       const remembered = await loadUserViews(item.id);
       if (remembered.length > 0) {

@@ -55,6 +55,14 @@
 | L8.5 | Hygiene: dead `renderSlotToCanvas`/`renderTransition` removed from RenderStep.tsx | ✅ DONE | `holdFrames`/`drawCover` are also dead but weren't approved for deletion — flagged for Phase 9 |
 | L8.6 | Verify Gemini / real `.insp` / Photos library | ⚠️ STILL OWNER-GATED | No key pasted, no Full Disk Access granted, no real `.insp` on the card during Phase 8 |
 
+## Library & Local AI Curation — Phase 9 ✅ COMPLETE (see docs/handoff/PHASE-10.md)
+| # | Feature | Status | Notes |
+|---|---------|--------|-------|
+| L9.1 | Project references survive re-analysis: stable window indices + load-time re-resolution | ✅ DONE | Gap shown live (saved moment loaded the whole proxy under clip-relative trims) + forced reorder in a pure check; `inheritHighlightIndices` (user-views.ts) keeps `lib-<id>-hl<n>` on the same footage (force path keeps the record json as anchor — `removeCurationArtifacts`); `loadProject` rebuilds moments via `montagePickToMediaFile` (planet URLs now survive a save too); 8/8 project refs identical spans after the whole-card force; sparse-index fixes in select.ts + gc.ts; 14 pure checks |
+| L9.2 | Export error-path hygiene: failed export resets the ffmpeg.wasm worker | ✅ DONE | Forced failure ("…slot 18 (IMG_08.jpg) (frame 2418)…" — slot/media/frame still named); next export exactly 1,116 frames matching the clean-worker control (stale tail would have been ≈2,418 frames); dead `holdFrames`/`drawCover` deleted (owner-approved) |
+| L9.3 | Reproducible grading: `temperature: 0` + `seed: 42` on gradeFrame only | ✅ DONE | Measured: unpinned varied per call (quality dark↔ok flip = the 0.42↔0.6 drift mechanism); pinned byte-identical 3/3 per frame and across request order; 3 pinned forced re-analyses → identical records; whole card 2,674 s / 174 jobs / 0 failed / 42/42 therm clean / llama mean 0.60 p95 1.24 peak 1.33 cores; second-moment table: 23 cap-1 seconds, min 0.55, floor intact |
+| L9.4 | Verify Gemini / real `.insp` / Photos library | ⚠️ STILL OWNER-GATED | No key pasted, no Full Disk Access granted, no real `.insp` on the card during Phase 9 |
+
 ## Phase 1 — Fix Fundamentals ✅ COMPLETE
 | # | Feature | Status | Notes |
 |---|---------|--------|-------|

@@ -9,6 +9,10 @@
  * most in time. The matching is pure (`matchRememberedViews`); I/O is below.
  * `removeCuration` deliberately leaves this file alone; cache GC removes it
  * once the item is gone.
+ *
+ * Phase 9 (§3.1): the same overlap matching also keeps window *indices* stable
+ * across a re-analysis (`inheritHighlightIndices`), because a saved project
+ * points at a moment as `lib-<id>-hl<index>`.
  */
 
 import fsp from 'fs/promises';
@@ -78,6 +82,50 @@ export function matchRememberedViews(windows: Array<Pick<HighlightWindow, 'index
     used.add(p.r);
   }
   return out;
+}
+
+/**
+ * Phase 9 (§3.1): keep window indices stable across a re-analysis. The index is
+ * the identity everything outside the record points at — project references
+ * (`lib-<id>-hl<n>`), story keys (`<id>#<n>`), clip/thumbnail filenames — but
+ * `curateVideo` assigns it by fresh score order, which grade drift can reshuffle.
+ * Each new window inherits the index of the previous window it overlaps most
+ * (greedy on overlap, one-to-one, same `MIN_OVERLAP_SEC` as the view memory);
+ * windows that match nothing take the lowest indices no survivor claimed, so
+ * indices stay within 0..MAX_HIGHLIGHTS-1. Array order (score order) is left
+ * alone — only the `index` field moves. Returns how many windows inherited.
+ */
+export function inheritHighlightIndices(
+  next: Array<Pick<HighlightWindow, 'index' | 'start' | 'end'>>,
+  previous: Array<Pick<HighlightWindow, 'index' | 'start' | 'end'>>,
+): number {
+  const pairs: Array<{ n: number; p: number; overlap: number }> = [];
+  next.forEach((nw, ni) => {
+    for (const pw of previous) {
+      const overlap = overlapSec(nw, pw);
+      if (overlap >= MIN_OVERLAP_SEC) pairs.push({ n: ni, p: pw.index, overlap });
+    }
+  });
+  pairs.sort((a, b) => b.overlap - a.overlap || a.n - b.n || a.p - b.p);
+  const inherited = new Map<number, number>();
+  const taken = new Set<number>();
+  for (const pair of pairs) {
+    if (inherited.has(pair.n) || taken.has(pair.p)) continue;
+    inherited.set(pair.n, pair.p);
+    taken.add(pair.p);
+  }
+  let free = 0;
+  next.forEach((nw, ni) => {
+    const idx = inherited.get(ni);
+    if (idx !== undefined) {
+      nw.index = idx;
+    } else {
+      while (taken.has(free)) free += 1;
+      nw.index = free;
+      taken.add(free);
+    }
+  });
+  return inherited.size;
 }
 
 /**

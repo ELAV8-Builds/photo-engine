@@ -70,8 +70,8 @@ export function classifyArtifact(dir: DataSubdir, name: string): ArtifactRef | n
 /** What exists right now, as far as orphan decisions need to know. */
 export interface KnownState {
   itemIds: ReadonlySet<string>;
-  /** Highlight windows the item's record currently holds (0 without a record). */
-  highlightCount(itemId: string): Promise<number>;
+  /** Window indices the item's record currently holds (empty without a record). Phase 9: indices survive re-analysis, so they are not dense. */
+  highlightIndices(itemId: string): Promise<ReadonlySet<number>>;
   /** Start/end/peak of each window in the item's record (empty without a record). Phase 7. */
   windowSpans(itemId: string): Promise<ReadonlyArray<{ start: number; end: number; sampleT: number }>>;
   /** Item ids a story plan names, or null when the plan file is unreadable. */
@@ -83,7 +83,7 @@ export async function isOrphan(ref: ArtifactRef, known: KnownState): Promise<boo
     case 'item':
       return !known.itemIds.has(ref.itemId);
     case 'highlight':
-      return !known.itemIds.has(ref.itemId) || ref.index >= (await known.highlightCount(ref.itemId));
+      return !known.itemIds.has(ref.itemId) || !(await known.highlightIndices(ref.itemId)).has(ref.index);
     case 'frame': {
       // A time-addressed frame belongs to whichever window covers its time
       // (± the same margin the frame route accepts) — or sits at a window's
@@ -163,8 +163,8 @@ async function knownState(): Promise<KnownState> {
   };
   return {
     itemIds,
-    highlightCount(itemId) {
-      return recordFor(itemId).then((r) => r?.highlights.length ?? 0);
+    highlightIndices(itemId) {
+      return recordFor(itemId).then((r) => new Set(r ? r.highlights.map((h) => h.index) : []));
     },
     windowSpans(itemId) {
       return recordFor(itemId).then((r) => (r ? r.highlights.map((h) => ({ start: h.start, end: h.end, sampleT: h.sampleT })) : []));
