@@ -13,7 +13,7 @@ import { registerAllHandlers } from '../jobs/handlers';
 import { startThermalWatchdog } from '../jobs/thermal';
 import { hasModel, ollamaHealth, OllamaUnavailableError } from '../ai/ollama';
 import { getSettings } from '../settings/store';
-import { loadCuration, removeCuration } from '../curation/record';
+import { loadCuration, removeCuration, removeHighlightArtifacts, saveCuration } from '../curation/record';
 import { selectForMontage, type SelectOptions } from '../curation/select';
 import { buildStoryContext, defaultKeys, type ContextSource } from '../story/context';
 import { generateStoryPlan, loadStoryPlan, saveStoryPlan } from '../story/generate';
@@ -206,7 +206,12 @@ export async function analyseItems(opts: AnalyseOptions = {}): Promise<{ enqueue
       }
       const patched = await patchItem(root.id, item.id, {
         curation: undefined,
-        status: { ...item.status, curate: 'pending', highlights: item.kind === 'video' && item.is360 ? 'pending' : 'skipped' },
+        status: {
+          ...item.status,
+          curate: 'pending',
+          highlights: item.kind === 'video' && item.is360 ? 'pending' : 'skipped',
+          pan: item.kind === 'video' && item.is360 ? 'pending' : 'skipped',
+        },
       });
       if (patched) enqueued += enqueueItemWork(patched, { provider: kind });
     }
@@ -218,6 +223,39 @@ export async function getCurationRecord(itemId: string): Promise<CurationRecord 
   const item = await resolveItem(itemId);
   if (!item) return null;
   return loadCuration(item.id);
+}
+
+/**
+ * Phase 5: a hand-chosen view for one 360 highlight. Rendered clips for that
+ * window are dropped and queued again; the view becomes `source: 'user'` and
+ * its version bumps so the browser re-fetches. Returns the updated window.
+ */
+export async function setHighlightView(
+  itemId: string,
+  index: number,
+  view: { lens: 'a' | 'b'; yawDeg: number; pitchDeg: number },
+): Promise<{ highlight: CurationRecord['highlights'][number] } | null> {
+  await ensureBootstrapped();
+  const item = await resolveItem(itemId);
+  if (!item || item.kind !== 'video' || !item.is360) return null;
+  const record = await loadCuration(item.id);
+  const h = record?.highlights.find((w) => w.index === index);
+  if (!record || !h) return null;
+
+  cancelWhere((j) => j.itemId === item.id && (j.type === 'highlights' || j.type === 'pan360'));
+  h.view = { ...view, source: 'user', version: (h.view?.version ?? 0) + 1 };
+  // A hand-set view is static: no pan; the planet clip does not depend on the view.
+  h.viewPath = [{ t: h.start, yawDeg: view.yawDeg, pitchDeg: view.pitchDeg }];
+  h.panProxy = undefined;
+  h.proxy = 'pending';
+  await removeHighlightArtifacts(item.id, h.index);
+  h.planetProxy = 'pending'; // removed with the other artefacts; cheap to redo from the .lrv
+  await saveCuration(record);
+
+  const patched = await patchItem(item.rootId, item.id, { status: { ...item.status, highlights: 'pending' } });
+  if (patched) enqueueItemWork(patched);
+  log.info('highlight view set by user', { item: item.name, index, lens: view.lens, yaw: view.yawDeg, pitch: view.pitchDeg });
+  return { highlight: h };
 }
 
 /** Every curated item (DTO) with its record, across all roots. */

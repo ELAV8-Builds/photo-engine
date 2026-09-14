@@ -140,6 +140,13 @@ export function heuristicShotList(ctx: StoryContext): StoryShot[] {
     const e = ctx.entries[i];
     if (e.kind === 'photo' && !e.people && i % 4 === 3) out[i].role = 'breather';
   }
+  // Tiny planet (Phase 5): one 360 moment, the best-scoring one that is still a plain beat, when there are enough shots.
+  if (n >= 3) {
+    const planet = ctx.entries
+      .filter((e) => e.is360 && out[e.index].role === 'beat')
+      .sort((a, b) => b.score - a.score)[0];
+    if (planet) out[planet.index].role = 'planet';
+  }
   return out;
 }
 

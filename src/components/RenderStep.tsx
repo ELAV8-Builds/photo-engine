@@ -157,8 +157,13 @@ export default function RenderStep(props: RenderStepProps) {
   // ------------------------------------------------------------------
   //  Animated Canvas Preview using v4 EffectsEngine
   // ------------------------------------------------------------------
+  // The preview and the exporter share cached <video> elements. While a render
+  // is in flight the preview must stop, or its per-frame seeks keep cancelling
+  // the exporter's seeks and `seeked` never fires (export hangs mid-slot).
+  const exportInFlight = progress.status === 'preparing' || progress.status === 'rendering' || progress.status === 'encoding';
+
   useEffect(() => {
-    if (!template || selectedMedia.length === 0) return;
+    if (!template || selectedMedia.length === 0 || exportInFlight) return;
 
     const canvas = previewCanvasRef.current;
     if (!canvas) return;
@@ -185,7 +190,7 @@ export default function RenderStep(props: RenderStepProps) {
     const slotConfigs: SlotConfig[] = template.slots.map((slot, i) => {
       const mixed = applyMixerOverrides(slot, mixerOverrides);
       const mid = slotAssignments[i] || '';
-      const media = mediaById.get(mid);
+      const media = mediaForSlot(mediaById.get(mid), mixed);
       const { fx, fy } = media
         ? getFocusPoint(media, slot.holdPoint)
         : { fx: 0.5, fy: 0.5 };
@@ -354,7 +359,7 @@ export default function RenderStep(props: RenderStepProps) {
 
       // Single layout — existing behavior
       const mid = slotAssignments[i] || '';
-      const media = mediaById.get(mid);
+      const media = mediaForSlot(mediaById.get(mid), slot);
       if (!media) {
         imagesLoaded++;
         return;
@@ -435,10 +440,10 @@ export default function RenderStep(props: RenderStepProps) {
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [template?.id, selectedMedia.length, slotAssignments.join(','), JSON.stringify(mixerOverrides), music?.url]);
+  }, [template?.id, selectedMedia.length, slotAssignments.join(','), JSON.stringify(mixerOverrides), music?.url, exportInFlight]);
 
   const currentSlot = template?.slots[previewSlotIndex] ?? null;
-  const currentMedia = mediaById.get(slotAssignments[previewSlotIndex] || '');
+  const currentMedia = currentSlot ? mediaForSlot(mediaById.get(slotAssignments[previewSlotIndex] || ''), currentSlot) : undefined;
 
   // ------------------------------------------------------------------
   //  Server-side render (POST to /api/render)
@@ -564,7 +569,7 @@ export default function RenderStep(props: RenderStepProps) {
       for (let i = 0; i < template.slots.length; i++) {
         const slot = applyMixerOverrides(template.slots[i], mixerOverrides);
         const assignedMediaId = slotAssignments[i] || '';
-        const assignedMedia = mediaById.get(assignedMediaId);
+        const assignedMedia = mediaForSlot(mediaById.get(assignedMediaId), slot);
 
         setProgress(prev => ({
           ...prev,
@@ -642,7 +647,7 @@ export default function RenderStep(props: RenderStepProps) {
         if (i < template.slots.length - 1) {
           const nextSlot = applyMixerOverrides(template.slots[i + 1], mixerOverrides);
           const nextMediaId = slotAssignments[i + 1] || '';
-          const nextMedia = mediaById.get(nextMediaId);
+          const nextMedia = mediaForSlot(mediaById.get(nextMediaId), nextSlot);
           if (assignedMedia && nextMedia) {
             globalFrameNumber = await renderTransitionFramesToFFmpeg(
               ctx,
@@ -672,7 +677,7 @@ export default function RenderStep(props: RenderStepProps) {
         const lastSlotIndex = template.slots.length - 1;
         const lastSlot = applyMixerOverrides(template.slots[lastSlotIndex], mixerOverrides);
         const lastMediaId = slotAssignments[lastSlotIndex] || '';
-        const lastMedia = mediaById.get(lastMediaId);
+        const lastMedia = mediaForSlot(mediaById.get(lastMediaId), lastSlot);
 
         if (lastMedia) {
           const lastSource = await loadMediaImage(lastMedia);
@@ -1263,6 +1268,16 @@ async function holdFrames(durationSeconds: number): Promise<void> {
 // ====================================================================
 //  Load an image from a MediaFile (using thumbnailUrl for videos)
 // ====================================================================
+
+/**
+ * Phase 5: a slot that asks for the tiny-planet reframe shows the media's
+ * square planet clip when it has one; everything else is unchanged. Trims and
+ * margins match the flat clip, so the same trimStart/trimEnd apply.
+ */
+function mediaForSlot(media: MediaFile | undefined, slot: TemplateSlot): MediaFile | undefined {
+  if (!media || slot.reframe !== 'tiny-planet' || !media.planetUrl) return media;
+  return { ...media, url: media.planetUrl, width: 1080, height: 1080, faces: [] };
+}
 
 function loadMediaImage(media: MediaFile): Promise<CanvasImageSource> {
   if (media.type === 'video') {

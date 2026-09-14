@@ -1,6 +1,6 @@
 # PhotoForge v4.1 — Spec Tracker
 
-## Library & Local AI Curation — Phases 1–4 ✅ COMPLETE (see docs/handoff/PHASE-5.md)
+## Library & Local AI Curation — Phases 1–5 ✅ COMPLETE (see docs/handoff/DONE.md)
 | # | Feature | Status | Notes |
 |---|---------|--------|-------|
 | L1.1 | Library folders (server-indexed, localhost-only API) | ✅ DONE | `src/server/**`, native macOS folder picker, id-addressed media, Range streaming |
@@ -21,7 +21,10 @@
 | L4.1 | `GeminiProvider` behind `VisionProvider` (fetch, JSON mode, low media resolution, minimal thinking) | ✅ DONE (contract verified live; real-key run not verified) | `src/server/ai/gemini.ts`; 429 back-off; unavailability keeps items pending |
 | L4.2 | Browser-owned key: IndexedDB + per-request headers; in-memory cloud session for jobs; never on disk/logs | ✅ DONE | `src/lib/provider-settings.ts`, `src/server/ai/{session,index}.ts`; `redact()` checked |
 | L4.3 | Settings page (profile, local model, provider, key, test, forget) + header link + cloud badge | ✅ DONE | `src/app/settings/page.tsx`; QA 375/768/1280 |
-| L5 | 360 signature moves (AI yaw pan, tiny planet, .insp, yaw editing) | ⏳ NEXT | Spec in docs/handoff/PHASE-5.md (sendcmd + tiny-planet proven) |
+| L5.1 | AI-directed yaw pan: `pan360` job plans start→peak→end view paths; `sendcmd` delta renders | ✅ DONE | `src/server/analysis/pan-plan.ts`, `src/server/media/pan.ts`; 27/51 windows pan on the card |
+| L5.2 | Tiny-planet clips per highlight + `reframe: 'tiny-planet'` slots + story `planet` role | ✅ DONE | `renderTinyPlanetProxy`; Cinematic Journey closer / Summer Vibes opener; `RenderStep.mediaForSlot` |
+| L5.3 | Per-highlight yaw editing (ReframePanel, frame preview, PUT view → re-render, versioned URLs) | ✅ DONE | 6 s round-trip verified; user views survive `pan360` |
+| L5.4 | `.insp` 360 photo reframing (equirect thumb, flat rendition) gated on 2:1 aspect | ⚠️ BUILT, UNVERIFIED | no `.insp` sample on the card |
 
 ## Phase 1 — Fix Fundamentals ✅ COMPLETE
 | # | Feature | Status | Notes |

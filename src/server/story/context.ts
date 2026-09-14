@@ -72,6 +72,7 @@ function entryFor(key: string, source: ContextSource, index: number): StoryConte
     faces: h.faces,
     score: h.score,
     durationSec: h.end - h.start,
+    is360: item.is360 || undefined,
   };
 }
 

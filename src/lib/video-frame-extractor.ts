@@ -33,18 +33,28 @@ export function getVideoElement(media: MediaFile): Promise<HTMLVideoElement> {
     video.muted = true; // Required for autoplay policies
     video.playsInline = true;
 
-    const onReady = () => {
+    const cleanup = () => {
       video.removeEventListener('loadeddata', onReady);
       video.removeEventListener('error', onError);
+      clearTimeout(timer);
+    };
+
+    const onReady = () => {
+      cleanup();
       videoCache.set(key, video);
       resolve(video);
     };
 
     const onError = () => {
-      video.removeEventListener('loadeddata', onReady);
-      video.removeEventListener('error', onError);
+      cleanup();
       reject(new Error(`Failed to load video: ${media.name}`));
     };
+
+    // Never wait forever: a stalled element rejects so callers fall back to a still frame.
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error(`Timed out loading video: ${media.name}`));
+    }, VIDEO_LOAD_TIMEOUT_MS);
 
     video.addEventListener('loadeddata', onReady);
     video.addEventListener('error', onError);
@@ -56,10 +66,15 @@ export function getVideoElement(media: MediaFile): Promise<HTMLVideoElement> {
       } else {
         video.src = media.url;
       }
-      video.load();
     }
+    // A cached element whose buffered data the browser has evicted (detached
+    // elements in a long-lived tab) sits at readyState < 2 and never fires
+    // `loadeddata` on its own — restart the fetch so it does.
+    video.load();
   });
 }
+
+const VIDEO_LOAD_TIMEOUT_MS = 20_000;
 
 /**
  * Seek a video element to a specific time and wait for the frame to be available.

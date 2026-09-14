@@ -27,7 +27,9 @@ import { curatePhoto, curateVideo } from '../analysis/highlights';
 import { hasModel, ollamaHealth, OllamaUnavailableError } from '../ai/ollama';
 import { createProviderForKind } from '../ai';
 import { ProviderUnavailableError, type VisionProvider } from '../ai/provider';
-import { highlightProxyPath, loadCuration, saveCuration, summarize } from '../curation/record';
+import { highlightPanPath, highlightPlanetPath, highlightProxyPath, loadCuration, saveCuration, summarize } from '../curation/record';
+import { planViewPaths } from '../analysis/pan-plan';
+import { renderPanProxy, renderTinyPlanetProxy } from '../media/pan';
 import { cancelWhere, registerHandler, type JobContext } from './queue';
 import type { CurationRecord, JobInfo } from '@/types/library';
 
@@ -86,7 +88,7 @@ async function handlePrepare(job: JobInfo, ctx: JobContext): Promise<void> {
       await setStep(rootId, item.id, 'probe', 'failed', errorMessage(err));
       // Without a probe nothing downstream can run; mark the rest skipped.
       await patchItem(rootId, item.id, {
-        status: { ...item.status, probe: 'failed', thumb: 'failed', proxy360: 'skipped', signals: 'skipped', curate: 'skipped', highlights: 'skipped' },
+        status: { ...item.status, probe: 'failed', thumb: 'failed', proxy360: 'skipped', signals: 'skipped', curate: 'skipped', highlights: 'skipped', pan: 'skipped' },
       });
       throw err;
     }
@@ -282,52 +284,136 @@ async function handleHighlights(job: JobInfo, ctx: JobContext): Promise<void> {
   if (!record) throw new Error('No curation record; run Analyse first');
 
   await setStep(item.rootId, item.id, 'highlights', 'processing');
-  const pending = record.highlights.filter((h) => h.proxy !== 'ready');
+  const tmpDir = dataPath('tmp', job.id);
+  const lrv = item.cameraProxyAbsPath && (await fileExists(item.cameraProxyAbsPath)) ? item.cameraProxyAbsPath : null;
+
+  // One task per artefact still missing: the flat clip, the pan clip, the tiny planet.
+  type Task = { kind: 'clip' | 'pan' | 'planet'; h: (typeof record.highlights)[number] };
+  const tasks: Task[] = [];
+  for (const h of record.highlights) {
+    if (h.view && h.proxy !== 'ready') tasks.push({ kind: 'clip', h });
+    if (h.panProxy === 'pending' && h.viewPath && h.viewPath.length >= 2) tasks.push({ kind: 'pan', h });
+    if (h.planetProxy === 'pending') tasks.push({ kind: 'planet', h });
+  }
   let failed = 0;
 
-  for (let i = 0; i < pending.length; i++) {
+  for (let i = 0; i < tasks.length; i++) {
     if (ctx.signal.aborted) break;
-    const h = pending[i];
-    const out = highlightProxyPath(item.id, h.index);
-    if (await fileExists(out)) {
-      h.proxy = 'ready';
-      continue;
-    }
+    const { kind, h } = tasks[i];
     const start = Math.max(0, h.start - HIGHLIGHT_MARGIN_SEC);
     const duration = Math.min((item.probe?.durationSec ?? h.end) - start, h.end - h.start + 2 * HIGHLIGHT_MARGIN_SEC);
+    const out = kind === 'clip' ? highlightProxyPath(item.id, h.index) : kind === 'pan' ? highlightPanPath(item.id, h.index) : highlightPlanetPath(item.id, h.index);
+    const setState = (state: 'ready' | 'failed' | 'skipped') => {
+      if (kind === 'clip') h.proxy = state;
+      else if (kind === 'pan') h.panProxy = state;
+      else h.planetProxy = state;
+    };
+    if (await fileExists(out)) {
+      setState('ready');
+      continue;
+    }
+    if (kind === 'planet' && !lrv) {
+      setState('skipped'); // tiny planet needs both lenses in one frame; only the camera proxy has that
+      continue;
+    }
+    const common = {
+      hasAudio: item.probe?.hasAudio ?? false,
+      signal: ctx.signal,
+      nice: budget.nice,
+      threads: budget.threads,
+      onProgress: (p: number) => ctx.report((i + p) / tasks.length),
+      timeoutMs: 30 * 60_000,
+    };
     const tmp = `${out}.${process.pid}.tmp.mp4`;
     try {
-      await renderFlatProxy(item.absPath, tmp, {
-        layout: item.layout,
-        lens: h.view?.lens ?? 'a',
-        view: { yawDeg: h.view?.yawDeg ?? 0, pitchDeg: h.view?.pitchDeg ?? 0, hFovDeg: 100, vFovDeg: 70 },
-        size: { width: 1920, height: 1080 },
-        bitrate: '12M',
-        trimStartSec: start,
-        trimDurationSec: duration,
-        hasAudio: item.probe?.hasAudio ?? false,
-        signal: ctx.signal,
-        nice: budget.nice,
-        threads: budget.threads,
-        onProgress: (p) => ctx.report((i + p) / pending.length),
-        timeoutMs: 30 * 60_000,
-      });
+      if (kind === 'clip') {
+        await renderFlatProxy(item.absPath, tmp, {
+          ...common,
+          layout: item.layout,
+          lens: h.view?.lens ?? 'a',
+          view: { yawDeg: h.view?.yawDeg ?? 0, pitchDeg: h.view?.pitchDeg ?? 0, hFovDeg: 100, vFovDeg: 70 },
+          size: { width: 1920, height: 1080 },
+          bitrate: '12M',
+          trimStartSec: start,
+          trimDurationSec: duration,
+        });
+      } else if (kind === 'pan') {
+        await renderPanProxy(item.absPath, tmp, {
+          ...common,
+          layout: item.layout as 'dual-fisheye-streams' | 'dual-fisheye-sbs',
+          lens: h.view?.lens ?? 'a',
+          path: h.viewPath!,
+          startSec: start,
+          durationSec: duration,
+          tmpDir,
+        });
+      } else {
+        await renderTinyPlanetProxy(lrv!, tmp, { ...common, startSec: start, durationSec: duration });
+      }
       await fsp.rename(tmp, out);
-      h.proxy = 'ready';
+      setState('ready');
     } catch (err) {
       await fsp.rm(tmp, { force: true });
       if (ctx.signal.aborted) break;
       failed += 1;
-      h.proxy = 'failed';
-      log.warn('highlight proxy failed', { item: item.name, index: h.index, error: errorMessage(err) });
+      setState('failed');
+      log.warn(`highlight ${kind} failed`, { item: item.name, index: h.index, error: errorMessage(err) });
     }
     await saveCuration(record);
   }
 
   await saveCuration(record);
-  const state = ctx.signal.aborted ? 'pending' : failed > 0 && failed === pending.length ? 'failed' : 'ready';
-  await setStep(item.rootId, item.id, 'highlights', state, failed > 0 ? `${failed} highlight clip(s) failed to render` : undefined);
+  await fsp.rm(tmpDir, { recursive: true, force: true });
+  const state = ctx.signal.aborted ? 'pending' : failed > 0 && failed === tasks.length && tasks.length > 0 ? 'failed' : 'ready';
+  await setStep(item.rootId, item.id, 'highlights', state, failed > 0 ? `${failed} highlight render(s) failed` : undefined);
   if (ctx.signal.aborted) throw new Error('Cancelled');
+}
+
+// ---------------------------------------------------------------------------
+// pan360: model-directed view paths across each 360 highlight window (model lane)
+// ---------------------------------------------------------------------------
+
+async function handlePan360(job: JobInfo, ctx: JobContext): Promise<void> {
+  const item = await requireItem(job);
+  const budget = await activeBudget();
+  const settings = await getSettings();
+  const record = await loadCuration(item.id);
+  if (!record || record.highlights.length === 0 || !record.highlights.some((h) => h.view)) {
+    await setStep(item.rootId, item.id, 'pan', 'skipped');
+    return;
+  }
+
+  let provider: VisionProvider;
+  try {
+    provider = createProviderForKind(job.provider, settings.visionModel);
+    if ((job.provider ?? 'local') === 'local') {
+      const health = await ollamaHealth();
+      if (!health.running || !hasModel(health.models, settings.visionModel)) throw new OllamaUnavailableError('Ollama is not running (start Ollama, then Analyse again)');
+    }
+  } catch (err) {
+    cancelWhere((j) => j.type === 'pan360' && j.id !== job.id && (j.provider ?? 'local') === (job.provider ?? 'local'));
+    throw err;
+  }
+
+  await setStep(item.rootId, item.id, 'pan', 'processing');
+  const tmpDir = dataPath('tmp', job.id);
+  try {
+    const planned = await planViewPaths(item, record, { provider, tmpDir, signal: ctx.signal, nice: budget.nice, threads: budget.threads, onProgress: ctx.report });
+    await saveCuration(record);
+    const pans = record.highlights.filter((h) => h.panProxy === 'pending').length;
+    log.info('pan planned', { item: item.name, windows: planned, pans });
+    // New pan / planet renders are the highlights job's business.
+    await patchItem(item.rootId, item.id, { status: { ...item.status, pan: 'ready', highlights: 'pending' } });
+  } catch (err) {
+    const transient = ctx.signal.aborted || err instanceof ProviderUnavailableError;
+    await setStep(item.rootId, item.id, 'pan', transient ? 'pending' : 'failed', errorMessage(err));
+    throw err;
+  } finally {
+    await fsp.rm(tmpDir, { recursive: true, force: true });
+  }
+
+  const fresh = await getItem(item.rootId, item.id);
+  if (fresh) enqueueItemWork(fresh);
 }
 
 // ---------------------------------------------------------------------------
@@ -339,4 +425,5 @@ export function registerAllHandlers(): void {
   registerHandler('signals', handleSignals);
   registerHandler('curate', handleCurate);
   registerHandler('highlights', handleHighlights);
+  registerHandler('pan360', handlePan360);
 }

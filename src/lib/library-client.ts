@@ -9,6 +9,7 @@ import type { MediaFile } from '@/types';
 import { providerHeaders, type AiProviderSettings } from './provider-settings';
 import type {
   CurationRecord,
+  HighlightWindow,
   JobInfo,
   LibraryItem,
   LibraryItemsPage,
@@ -102,6 +103,13 @@ export const libraryApi = {
     request<{ ok: true; provider: string; model: string }>('/api/system/provider-test', { method: 'POST', headers: providerHeaders(settings) }),
   /** Forget the cloud key parked in server memory. */
   clearCloudSession: () => request<{ cleared: boolean }>('/api/system/session', { method: 'DELETE' }),
+
+  /** Phase 5: set a 360 highlight's view by hand; its clips re-render. */
+  setHighlightView: (itemId: string, index: number, view: { lens: 'a' | 'b'; yawDeg: number; pitchDeg: number }) =>
+    request<{ highlight: HighlightWindow }>(`/api/library/items/${encodeURIComponent(itemId)}/highlights/${index}/view`, {
+      method: 'PUT',
+      body: JSON.stringify(view),
+    }),
 };
 
 // ---------------------------------------------------------------------------
@@ -112,8 +120,13 @@ export const mediaUrl = {
   thumb: (id: string) => `/api/media/${encodeURIComponent(id)}/thumb`,
   image: (id: string, max: 1024 | 2048 | 4096 = 2048) => `/api/media/${encodeURIComponent(id)}/image?max=${max}`,
   stream: (id: string, variant: 'original' | 'proxy' = 'original') => `/api/media/${encodeURIComponent(id)}/stream?variant=${variant}`,
-  highlight: (id: string, n: number) => `/api/media/${encodeURIComponent(id)}/highlight/${n}/stream`,
-  highlightThumb: (id: string, n: number) => `/api/media/${encodeURIComponent(id)}/highlight/${n}/thumb`,
+  highlight: (id: string, n: number, v?: number) => `/api/media/${encodeURIComponent(id)}/highlight/${n}/stream${v ? `?v=${v}` : ''}`,
+  highlightThumb: (id: string, n: number, v?: number) => `/api/media/${encodeURIComponent(id)}/highlight/${n}/thumb${v ? `?v=${v}` : ''}`,
+  /** Phase 5 */
+  highlightPan: (id: string, n: number, v?: number) => `/api/media/${encodeURIComponent(id)}/highlight/${n}/pan/stream${v ? `?v=${v}` : ''}`,
+  highlightPlanet: (id: string, n: number, v?: number) => `/api/media/${encodeURIComponent(id)}/highlight/${n}/planet/stream${v ? `?v=${v}` : ''}`,
+  highlightFrame: (id: string, n: number, lens: 'a' | 'b', yawDeg: number, pitchDeg: number) =>
+    `/api/media/${encodeURIComponent(id)}/highlight/${n}/frame?lens=${lens}&yaw=${Math.round(yawDeg)}&pitch=${Math.round(pitchDeg)}`,
 };
 
 /** Project media id for a library item or one of its highlight windows. */
@@ -174,12 +187,14 @@ export function libraryItemToMediaFile(item: LibraryItem, order: number, faces: 
     };
   }
 
+  // Phase 5: a dual-fisheye 360 photo (.insp, 2:1) is served as a flat 16:9 reframe.
+  const dualFisheyePhoto = item.is360 && item.ext === 'insp' && Math.abs(width / height - 2) < 0.05;
   return {
     id: libraryMediaId(item.id),
     url: mediaUrl.image(item.id, 2048),
     name: item.name,
-    width,
-    height,
+    width: dualFisheyePhoto ? 2048 : width,
+    height: dualFisheyePhoto ? 1152 : height,
     selected: true,
     faces,
     order,
@@ -206,12 +221,16 @@ export function montagePickToMediaFile(pick: MontagePick, item: LibraryItem, ord
   const windowLen = pick.end - pick.start;
   // The highlight clip carries up to 0.5 s of margin either side of the window.
   const lead = Math.min(HIGHLIGHT_MARGIN_SEC, pick.start);
+  const v = pick.viewVersion;
+  // Phase 5: prefer the panning clip when it exists (same window, same margins).
+  const clipUrl = pick.highlightPanReady ? mediaUrl.highlightPan(item.id, pick.highlightIndex, v) : mediaUrl.highlight(item.id, pick.highlightIndex, v);
   return {
     ...base,
     id: libraryMediaId(item.id, pick.highlightIndex),
     name: `${item.name} · ${formatClock(pick.start)}`,
-    url: useHighlightClip ? mediaUrl.highlight(item.id, pick.highlightIndex) : base.url,
-    thumbnailUrl: useHighlightClip ? mediaUrl.highlightThumb(item.id, pick.highlightIndex) : base.thumbnailUrl,
+    url: useHighlightClip ? clipUrl : base.url,
+    thumbnailUrl: useHighlightClip ? mediaUrl.highlightThumb(item.id, pick.highlightIndex, v) : base.thumbnailUrl,
+    planetUrl: item.is360 && pick.highlightPlanetReady ? mediaUrl.highlightPlanet(item.id, pick.highlightIndex, v) : undefined,
     width: useHighlightClip ? 1920 : base.width,
     height: useHighlightClip ? 1080 : base.height,
     duration: useHighlightClip ? lead + windowLen + HIGHLIGHT_MARGIN_SEC : base.duration,
@@ -245,6 +264,8 @@ export function describeJob(job: JobInfo): string {
       return 'Analysing with local AI';
     case 'highlights':
       return 'Rendering highlight clips';
+    case 'pan360':
+      return 'Choosing where to look';
     default:
       return job.type;
   }

@@ -86,6 +86,10 @@ function recoverInterrupted(item: IndexedItem): IndexedItem {
     status.highlights = item.kind === 'video' && item.is360 ? 'pending' : 'skipped';
     changed = true;
   }
+  if (status.pan === undefined) {
+    status.pan = item.kind === 'video' && item.is360 ? 'pending' : 'skipped';
+    changed = true;
+  }
   return changed ? { ...item, status } : item;
 }
 

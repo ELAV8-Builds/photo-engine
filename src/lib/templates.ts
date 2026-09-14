@@ -1,4 +1,5 @@
 import { SmartTemplate, Template, TemplateSlot } from '@/types';
+import type { ShotRole } from '@/types/library';
 
 /**
  * Smart Templates v4 — pre-built timelines with the full v4 effects vocabulary.
@@ -111,7 +112,8 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
         textOverlay: { text: 'The Beauty Within', position: 'top', fontSize: 'md', fontWeight: 'bold', animation: 'fade-in', color: '#fff' },
       },
       {
-        slotType: 'photo', duration: 3, transition: 'fade', effect: 'slow-zoom', holdPoint: 'center',
+        // Closing shot: a 360 moment here becomes a tiny planet (Phase 5); photos and flat video render normally.
+        slotType: 'any', duration: 4, transition: 'fade', effect: 'slow-zoom', holdPoint: 'center', reframe: 'tiny-planet',
         motionIntensity: 0.4, transitionDuration: 1.0,
         postEffects: [
           { effect: 'colorGrade', intensity: 0.7, params: { preset: 'warm-cinematic' } },
@@ -636,7 +638,8 @@ export const SMART_TEMPLATES: SmartTemplate[] = [
     ],
     slots: [
       {
-        slotType: 'any', duration: 4, transition: 'morphDissolve', effect: 'dolly-in', holdPoint: 'face',
+        // Opening shot: a 360 moment here becomes a tiny planet (Phase 5); other media render normally.
+        slotType: 'any', duration: 4, transition: 'morphDissolve', effect: 'dolly-in', holdPoint: 'face', reframe: 'tiny-planet',
         motionIntensity: 0.5, motionEasing: 'easeOut', transitionDuration: 0.5,
         postEffects: [
           { effect: 'colorGrade', intensity: 0.6, params: { preset: 'golden-hour' } },
@@ -1294,19 +1297,23 @@ export function assignMediaToSlots(
   }
 
   let pool = [...mediaIds];
-  const assigned: string[] = [];
+  const assigned: string[] = new Array(template.slots.length).fill('');
   const takeFrom = (predicate: (id: string) => boolean): string | undefined => {
     const idx = pool.findIndex(predicate);
     if (idx === -1) return undefined;
     return pool.splice(idx, 1)[0];
   };
-  for (const slot of template.slots) {
+  // Tiny-planet slots (Phase 5) only make sense with a 360 video, so they choose first; the rest go in order.
+  const order = template.slots
+    .map((slot, i) => i)
+    .sort((a, b) => Number(template.slots[b].reframe === 'tiny-planet') - Number(template.slots[a].reframe === 'tiny-planet') || a - b);
+  for (const i of order) {
+    const slot = template.slots[i];
     if (pool.length === 0) pool = [...mediaIds]; // wrap: repeat media when slots outnumber it
-    const wanted = slot.slotType;
-    const id =
+    const wanted = slot.reframe === 'tiny-planet' ? 'video' : slot.slotType;
+    assigned[i] =
       (wanted === 'photo' || wanted === 'video' ? takeFrom((m) => kinds.get(m) === wanted) : undefined) ??
       takeFrom(() => true)!;
-    assigned.push(id);
   }
   return assigned;
 }
@@ -1364,7 +1371,7 @@ export function expandTemplateForMedia(
   template: SmartTemplate,
   mediaCount: number,
   targetDuration?: number,
-  roles?: ReadonlyArray<'opener' | 'beat' | 'breather' | 'closer'>,
+  roles?: ReadonlyArray<ShotRole>,
 ): SmartTemplate {
   if (mediaCount <= template.slots.length) return roles ? applyShotRoles(template, roles) : template;
 
@@ -1471,6 +1478,15 @@ export function expandTemplateForMedia(
     newTotalDuration = expandedSlots.reduce((sum, s) => sum + s.duration, 0);
   }
 
+  // A tiny-planet reframe on the template's closing slot is about *closing*, so it
+  // follows the real last slot when the template has been expanded (Phase 5).
+  const closingBase = baseSlots[baseCount - 1];
+  if (closingBase.reframe === 'tiny-planet' && expandedSlots.length > baseCount) {
+    expandedSlots[baseCount - 1] = { ...expandedSlots[baseCount - 1], reframe: undefined };
+    const last = expandedSlots[expandedSlots.length - 1];
+    expandedSlots[expandedSlots.length - 1] = { ...last, reframe: 'tiny-planet', holdPoint: 'center', layout: 'single', mediaCount: 1 };
+  }
+
   const expanded: SmartTemplate = {
     ...template,
     slots: expandedSlots,
@@ -1491,7 +1507,7 @@ const BREATHER_MAX_SEC = 6;
  */
 export function applyShotRoles(
   template: SmartTemplate,
-  roles: ReadonlyArray<'opener' | 'beat' | 'breather' | 'closer'>,
+  roles: ReadonlyArray<ShotRole>,
 ): SmartTemplate {
   const slots = template.slots.map((slot, i) => {
     const role = roles[i];
@@ -1503,6 +1519,15 @@ export function applyShotRoles(
       next.motionIntensity = Math.min(slot.motionIntensity ?? 0.5, 0.35);
     } else if (role === 'opener') {
       next.speedPreset = 'dramatic';
+    } else if (role === 'planet') {
+      // Tiny planet: hold a little longer, centre it, keep motion gentle so the horizon ring reads.
+      next.reframe = 'tiny-planet';
+      next.holdPoint = 'center';
+      next.duration = Math.min(BREATHER_MAX_SEC, Math.round(slot.duration * 1.25 * 10) / 10);
+      next.motionIntensity = Math.min(slot.motionIntensity ?? 0.5, 0.35);
+      next.layout = 'single';
+      next.mediaCount = 1;
+      next.textOverlay = undefined;
     } else {
       next.speedPreset = 'decelerate';
     }

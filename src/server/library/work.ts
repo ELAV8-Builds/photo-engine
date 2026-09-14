@@ -44,6 +44,10 @@ export function planItemJobs(item: IndexedItem, opts: PlanOptions = {}): Enqueue
   if (s.curate === 'ready' && s.highlights === 'pending') {
     jobs.push({ type: 'highlights', lane: 'ffmpeg', priority: PRIORITY.highlights, itemId: item.id, rootId: item.rootId });
   }
+  // Phase 5: view paths need the record (curate ready) and run on the model lane after curation.
+  if (s.curate === 'ready' && s.pan === 'pending') {
+    jobs.push({ type: 'pan360', lane: 'model', priority: PRIORITY.pan360, itemId: item.id, rootId: item.rootId, provider: opts.provider });
+  }
   return jobs;
 }
 

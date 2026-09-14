@@ -37,6 +37,7 @@ export const PRIORITY = {
   signals: 30,
   highlights: 40,
   curate: 50,
+  pan360: 55,
 } as const;
 
 export interface JobContext {

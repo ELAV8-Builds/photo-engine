@@ -63,7 +63,7 @@ export function buildStoryPrompt(ctx: StoryContext): string {
   const catalog = STORY_TEMPLATE_STYLES.map((s) => `- ${s}: ${TEMPLATE_CATALOG[s]}`).join('\n');
   const shots = ctx.entries
     .map((e) => {
-      const kind = e.kind === 'video' ? `video ${Math.round(e.durationSec ?? 4)}s` : 'photo';
+      const kind = e.kind === 'video' ? `${e.is360 ? '360 video' : 'video'} ${Math.round(e.durationSec ?? 4)}s` : 'photo';
       const who = e.faces ? 'faces' : e.people ? 'people' : 'no people';
       return `${e.index}. [${fmtTime(e.at)}] ${kind}, ${who}, score ${e.score.toFixed(2)}: ${e.caption || e.scene || 'untitled'}${e.scene && e.caption ? ` (${e.scene})` : ''}`;
     })
@@ -77,9 +77,10 @@ export function buildStoryPrompt(ctx: StoryContext): string {
     ` "chapters": [{"title": "<= ${L.chapterTitleWords} words", "startIndex": n, "endIndex": n}],`,
     ` "template": one of ${STORY_TEMPLATE_STYLES.join(' | ')}, "templateReasons": ["<= ${L.reasonWords} words", ... up to ${L.maxReasons}],`,
     ' "pacing": "calm" | "steady" | "fast", "musicMood": "<= 4 words",',
-    ' "shotList": [{"index": n, "role": "opener" | "beat" | "breather" | "closer"}]}',
+    ' "shotList": [{"index": n, "role": "opener" | "beat" | "breather" | "closer" | "planet"}]}',
     `Rules: chapters cover the shots in order without overlapping, ${L.minChapterItems}+ shots each, at most ${L.maxChapters};`,
-    'exactly one opener and one closer; breathers are calm scenery shots; title is evocative, not a list; no emojis.',
+    'exactly one opener and one closer; breathers are calm scenery shots; at most one planet — a "360 video" shot with a striking',
+    'surroundings that will be shown as a tiny-planet sphere; title is evocative, not a list; no emojis.',
     'Templates:',
     catalog,
     'Shots:',

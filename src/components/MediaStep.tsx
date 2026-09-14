@@ -5,6 +5,7 @@ import { MediaFile } from '@/types';
 import { detectFaces } from '@/lib/face-detect';
 import { saveTrimMemory, loadTrimMemory } from '@/lib/trim-memory';
 import LibraryPanel from './LibraryPanel';
+import ReframePanel, { parseHighlightMediaId } from './ReframePanel';
 import {
   isHeicFile,
   isDefinitelyHeic,
@@ -39,6 +40,8 @@ export default function MediaStep({ media, onMediaChange, onNext, suggestedPickC
   const [dragOver, setDragOver] = useState(false);
   const [failedFiles, setFailedFiles] = useState<FailedFile[]>([]);
   const [expandedVideo, setExpandedVideo] = useState<string | null>(null);
+  /** Phase 5: the 360 highlight whose view is being edited. */
+  const [reframing, setReframing] = useState<string | null>(null);
 
   const processFiles = useCallback(async (files: FileList | File[]) => {
     const mediaFiles = Array.from(files).filter(f => isMediaFile(f));
@@ -431,6 +434,19 @@ export default function MediaStep({ media, onMediaChange, onNext, suggestedPickC
                     >
                       ✂ TRIM
                     </button>
+                    {/* Reframe (Phase 5) — 360 highlight moments only */}
+                    {item.is360 && parseHighlightMediaId(item.id) && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setReframing(reframing === item.id ? null : item.id);
+                        }}
+                        className="text-[9px] font-bold bg-black/70 text-accent-gold border border-accent-gold/40 px-2 py-0.5 rounded-full hover:bg-black/90 transition-colors"
+                        aria-expanded={reframing === item.id}
+                      >
+                        ⟲ REFRAME
+                      </button>
+                    )}
                   </div>
                 )}
 
@@ -489,6 +505,19 @@ export default function MediaStep({ media, onMediaChange, onNext, suggestedPickC
               </div>
             ))}
           </div>
+
+          {/* Reframe a 360 moment (Phase 5) */}
+          {reframing && (() => {
+            const target = media.find(m => m.id === reframing);
+            if (!target) return null;
+            return (
+              <ReframePanel
+                media={target}
+                onApplied={(updated) => onMediaChange(media.map(m => (m.id === updated.id ? updated : m)))}
+                onClose={() => setReframing(null)}
+              />
+            );
+          })()}
 
           {/* Inline Video Trimmer (expands below grid when a video is clicked) */}
           {expandedVideo && (() => {

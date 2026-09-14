@@ -16,6 +16,7 @@ import { assertServer, dataPath, fileExists, globalSingleton } from '../runtime'
 import { findTool } from './binaries';
 import { run, runFfmpeg, runFfprobeJson, type FfmpegOptions } from './ffmpeg';
 import { DEFAULT_VIEW, flatViewFilter } from './reframe';
+import { renderViewFrame } from './pan';
 import type { IndexedItem } from '../library/index-store';
 
 assertServer();
@@ -82,6 +83,17 @@ async function resizeHeifToJpeg(input: string, output: string, maxPx: number, op
   }
 }
 
+/**
+ * Phase 5: Insta360 `.insp` photos are two fisheye circles side by side in a
+ * JPEG (2:1). Gate on the probed aspect so an already-stitched JPEG that
+ * happens to carry the extension still renders as a normal photo.
+ * UNVERIFIED on a real .insp (none on the test card) — see PHASE-5 notes.
+ */
+export function isDualFisheyePhoto(item: Pick<IndexedItem, 'ext' | 'probe'>): boolean {
+  if (item.ext !== 'insp' || !item.probe?.width || !item.probe?.height) return false;
+  return Math.abs(item.probe.width / item.probe.height - 2) < 0.05;
+}
+
 /** Timestamp for a representative video frame: 1 s in, or the middle of very short clips. */
 function representativeTime(durationSec?: number): number {
   if (!durationSec || durationSec <= 0) return 0;
@@ -99,7 +111,14 @@ export async function generateThumbnail(item: IndexedItem, opts: FfmpegOptions =
 
   await withAtomicOutput(out, async (tmp) => {
     if (item.kind === 'photo') {
-      if (HEIF_EXT.has(item.ext)) {
+      if (isDualFisheyePhoto(item)) {
+        // Phase 5: 360 photo → equirect panorama thumbnail so the whole sphere is visible in the grid.
+        await runFfmpeg(
+          ['-i', item.absPath],
+          ['-frames:v', '1', '-vf', `v360=input=dfisheye:ih_fov=200:iv_fov=200:output=equirect:w=${THUMB_MAX_PX}:h=${THUMB_MAX_PX / 2},format=yuvj420p`, '-q:v', '3', '-f', 'image2', tmp],
+          { ...opts, hwaccel: false, timeoutMs: 120_000 },
+        );
+      } else if (HEIF_EXT.has(item.ext)) {
         await resizeHeifToJpeg(item.absPath, tmp, THUMB_MAX_PX, opts);
       } else {
         await resizeWithFfmpeg(item.absPath, tmp, THUMB_MAX_PX, opts);
@@ -177,7 +196,16 @@ export async function ensureRendition(item: IndexedItem, max: RenditionSize, opt
     try {
       if (await fileExists(out)) return out;
       await withAtomicOutput(out, async (tmp) => {
-        if (HEIF_EXT.has(item.ext)) {
+        if (isDualFisheyePhoto(item)) {
+          // Phase 5: flat 16:9 reframe of lens A at the default view (same convention as 360 video).
+          const size = { width: max, height: Math.round((max * 9) / 16) };
+          const reframe = flatViewFilter('dual-fisheye-sbs', 'a', DEFAULT_VIEW, size)!;
+          await runFfmpeg(['-i', item.absPath], ['-frames:v', '1', '-vf', `${reframe.filter},format=yuvj420p`, '-q:v', '3', '-f', 'image2', tmp], {
+            ...opts,
+            hwaccel: false,
+            timeoutMs: 120_000,
+          });
+        } else if (HEIF_EXT.has(item.ext)) {
           await resizeHeifToJpeg(item.absPath, tmp, max, opts);
         } else {
           await resizeWithFfmpeg(item.absPath, tmp, max, opts);
@@ -229,6 +257,41 @@ export async function ensureHighlightThumb(itemId: string, index: number, clipPa
     }
   })();
   renditionState.inflight.set(out, task);
+  return task;
+}
+
+/**
+ * Phase 5: one flat preview frame of a 360 highlight at an arbitrary view,
+ * for the yaw editor. Cached at `outPath`; rendered from the camera proxy when
+ * present (cheap), else from the source. Shares the rendition concurrency cap.
+ */
+export async function ensureViewFrame(
+  item: IndexedItem,
+  atSec: number,
+  lens: 'a' | 'b',
+  view: { yawDeg: number; pitchDeg: number },
+  outPath: string,
+  opts: FfmpegOptions = {},
+): Promise<string> {
+  if (await fileExists(outPath)) return outPath;
+  const existing = renditionState.inflight.get(outPath);
+  if (existing) return existing;
+
+  const task = (async () => {
+    const release = await acquireRenditionSlot();
+    try {
+      if (await fileExists(outPath)) return outPath;
+      const useProxy = !!item.cameraProxyAbsPath && (await fileExists(item.cameraProxyAbsPath));
+      const input = useProxy ? item.cameraProxyAbsPath! : item.absPath;
+      const layout = useProxy ? 'dual-fisheye-sbs' : (item.layout as 'dual-fisheye-streams' | 'dual-fisheye-sbs');
+      await withAtomicOutput(outPath, (tmp) => renderViewFrame(input, layout, lens, view, atSec, tmp, opts));
+      return outPath;
+    } finally {
+      release();
+      renditionState.inflight.delete(outPath);
+    }
+  })();
+  renditionState.inflight.set(outPath, task);
   return task;
 }
 

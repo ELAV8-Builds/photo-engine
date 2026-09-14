@@ -59,6 +59,8 @@ export interface ItemStatus {
   curate: ProcessingState;
   /** Flat 1080p clips for each chosen 360 highlight; 'skipped' for photos and flat videos. */
   highlights: ProcessingState;
+  /** Phase 5: model-directed view paths (pan keyframes) for 360 highlights; 'skipped' otherwise. */
+  pan: ProcessingState;
 }
 
 /**
@@ -122,9 +124,10 @@ export type JobLane = 'ffmpeg' | 'model' | 'io';
  * proxy360  — flat browser-playable preview for a 360 video.
  * signals   — Stage-1 per-second measurements for a video (Phase 2 input).
  * curate    — local vision-model grading; videos also get ranked highlight windows.
- * highlights— flat 1080p proxies for each chosen 360 highlight window.
+ * highlights— flat 1080p proxies for each chosen 360 highlight window (plus pan / tiny-planet clips).
+ * pan360    — model-directed view keyframes across each 360 highlight window (Phase 5).
  */
-export type JobType = 'scan-root' | 'prepare' | 'proxy360' | 'signals' | 'curate' | 'highlights';
+export type JobType = 'scan-root' | 'prepare' | 'proxy360' | 'signals' | 'curate' | 'highlights' | 'pan360';
 
 export type JobState = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
 
@@ -264,6 +267,17 @@ export interface HighlightView {
   lens: 'a' | 'b';
   yawDeg: number;
   pitchDeg: number;
+  /** 'user' views were set by hand and are never overwritten by re-curation. */
+  source?: 'model' | 'user';
+  /** Bumped on every change so cached clips/thumbnails are re-fetched. */
+  version?: number;
+}
+
+/** A view keyframe inside a highlight window (clip time in seconds). */
+export interface ViewKeyframe {
+  t: number;
+  yawDeg: number;
+  pitchDeg: number;
 }
 
 export interface HighlightWindow {
@@ -283,6 +297,12 @@ export interface HighlightWindow {
   view?: HighlightView;
   /** 360 only: the flat 1080p clip for this window. */
   proxy?: ProcessingState;
+  /** Phase 5, 360 only: view keyframes (same lens as `view`) across the window; ≥ 2 entries means a pan. */
+  viewPath?: ViewKeyframe[];
+  /** Phase 5: the panning 1080p clip (only when the path actually moves). */
+  panProxy?: ProcessingState;
+  /** Phase 5: the square tiny-planet clip. */
+  planetProxy?: ProcessingState;
 }
 
 export interface CurationRecord {
@@ -309,7 +329,8 @@ export interface CurationRecord {
 export type StoryTemplateStyle = TemplateStyle;
 
 export type StoryPacing = 'calm' | 'steady' | 'fast';
-export type ShotRole = 'opener' | 'beat' | 'breather' | 'closer';
+/** `planet` (Phase 5) asks for the tiny-planet reframe; only meaningful on a 360 highlight. */
+export type ShotRole = 'opener' | 'beat' | 'breather' | 'closer' | 'planet';
 
 /** One shot the story is told with — a photo or one video highlight. Indices refer to this list. */
 export interface StoryContextEntry {
@@ -325,6 +346,8 @@ export interface StoryContextEntry {
   faces: boolean;
   score: number;
   durationSec?: number;
+  /** 360 source (Phase 5: eligible for the tiny-planet role). */
+  is360?: boolean;
 }
 
 export interface StoryContext {
@@ -372,6 +395,12 @@ export interface MontagePick {
   end?: number;
   /** 360 only: the flat highlight clip has been rendered. */
   highlightProxyReady?: boolean;
+  /** 360 only (Phase 5): a panning clip exists and should be preferred. */
+  highlightPanReady?: boolean;
+  /** 360 only (Phase 5): a tiny-planet clip exists for slots that ask for it. */
+  highlightPlanetReady?: boolean;
+  /** 360 only: cache-busting version of the chosen view. */
+  viewVersion?: number;
   score: number;
   caption?: string;
 }

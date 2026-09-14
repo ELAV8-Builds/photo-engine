@@ -23,6 +23,8 @@ export interface MediaFile {
   is360?: boolean;
   /** Best-effort capture time (epoch ms) for chronological ordering. */
   capturedAt?: number;
+  /** 360 highlight only (Phase 5): square tiny-planet clip, used by slots with `reframe: 'tiny-planet'`. */
+  planetUrl?: string;
 }
 
 export type PhotoFile = MediaFile;
@@ -75,6 +77,8 @@ export interface TemplateSlot {
   mediaCount?: number;
   /** Transition overlay — VFX clip composited on top during this slot's outgoing transition */
   transitionOverlay?: TransitionOverlayConfig;
+  /** How a 360 highlight is shown here (Phase 5). 'tiny-planet' uses the media's square planet clip when it has one. */
+  reframe?: 'flat' | 'tiny-planet';
 }
 
 /** Configuration for a transition overlay (VFX clip between shots) */

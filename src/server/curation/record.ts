@@ -23,6 +23,31 @@ export function highlightProxyPath(itemId: string, index: number): string {
   return dataPath('proxies', `${itemId}-hl-${index}.mp4`);
 }
 
+/** Phase 5: panning flat clip for a highlight window. */
+export function highlightPanPath(itemId: string, index: number): string {
+  return dataPath('proxies', `${itemId}-hl-${index}-pan.mp4`);
+}
+
+/** Phase 5: square tiny-planet clip for a highlight window. */
+export function highlightPlanetPath(itemId: string, index: number): string {
+  return dataPath('proxies', `${itemId}-hl-${index}-planet.mp4`);
+}
+
+/** Phase 5: cached yaw-editor preview frame; angles are rounded to whole degrees by the caller. */
+export function viewFramePath(itemId: string, index: number, lens: 'a' | 'b', yawDeg: number, pitchDeg: number): string {
+  return dataPath('thumbs', `${itemId}-hl-${index}-view-${lens}-${yawDeg}-${pitchDeg}.jpg`);
+}
+
+/** Remove every rendered artefact of one window (clip, pan, planet, thumb) so a new view re-renders cleanly. */
+export async function removeHighlightArtifacts(itemId: string, index: number): Promise<void> {
+  await Promise.all([
+    fsp.rm(highlightProxyPath(itemId, index), { force: true }),
+    fsp.rm(highlightPanPath(itemId, index), { force: true }),
+    fsp.rm(highlightPlanetPath(itemId, index), { force: true }),
+    fsp.rm(highlightThumbPath(itemId, index), { force: true }),
+  ]);
+}
+
 export async function loadCuration(itemId: string): Promise<CurationRecord | null> {
   const p = curationPath(itemId);
   if (!(await fileExists(p))) return null;
@@ -49,10 +74,7 @@ const MAX_HIGHLIGHTS = 8;
 export async function removeCuration(itemId: string): Promise<void> {
   await fsp.rm(curationPath(itemId), { force: true });
   await fsp.rm(curationPartialPath(itemId), { force: true });
-  for (let n = 0; n < MAX_HIGHLIGHTS; n++) {
-    await fsp.rm(highlightProxyPath(itemId, n), { force: true });
-    await fsp.rm(highlightThumbPath(itemId, n), { force: true });
-  }
+  for (let n = 0; n < MAX_HIGHLIGHTS; n++) await removeHighlightArtifacts(itemId, n);
 }
 
 /** Grades keyed by sample time (string seconds) for one model. */

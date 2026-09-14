@@ -36,7 +36,7 @@ export class InvalidStoryError extends Error {
 }
 
 const PACINGS: readonly StoryPacing[] = ['calm', 'steady', 'fast'];
-const ROLES: readonly ShotRole[] = ['opener', 'beat', 'breather', 'closer'];
+const ROLES: readonly ShotRole[] = ['opener', 'beat', 'breather', 'closer', 'planet'];
 
 export function words(value: unknown, max: number): string {
   if (typeof value !== 'string') return '';
@@ -116,7 +116,7 @@ export function normaliseChapters(raw: unknown, n: number): StoryChapter[] {
   return out;
 }
 
-export function normaliseShotList(raw: unknown, n: number): StoryShot[] {
+export function normaliseShotList(raw: unknown, n: number, is360?: (index: number) => boolean): StoryShot[] {
   const list = Array.isArray(raw) ? raw : [];
   const byIndex = new Map<number, ShotRole>();
   for (const s of list) {
@@ -127,18 +127,21 @@ export function normaliseShotList(raw: unknown, n: number): StoryShot[] {
     const role = typeof o.role === 'string' && (ROLES as readonly string[]).includes(o.role) ? (o.role as ShotRole) : 'beat';
     byIndex.set(idx, role);
   }
-  // Exactly one opener and one closer.
+  // Exactly one opener and one closer; at most one planet, and only on a 360 shot.
   let opener = -1;
   let closer = -1;
+  let planet = -1;
   byIndex.forEach((role, idx) => {
     if (role === 'opener') opener = opener === -1 ? idx : Math.min(opener, idx);
     if (role === 'closer') closer = closer === -1 ? idx : Math.max(closer, idx);
+    if (role === 'planet' && (is360?.(idx) ?? false) && planet === -1) planet = idx;
   });
   const out: StoryShot[] = [];
   for (let i = 0; i < n; i++) {
     let role = byIndex.get(i) ?? 'beat';
     if (role === 'opener' && i !== opener) role = 'beat';
     if (role === 'closer' && i !== closer) role = 'beat';
+    if (role === 'planet' && i !== planet) role = 'beat';
     out.push({ index: i, role });
   }
   if (n > 0 && opener === -1) out[0].role = 'opener';
@@ -175,6 +178,6 @@ export function validateStoryPlan(value: unknown, ctx: StoryContext, meta: { mod
     templateReasons,
     pacing,
     musicMood: words(o.musicMood ?? o.music_mood, STORY_LIMITS.moodWords),
-    shotList: normaliseShotList(o.shotList ?? o.shot_list, n),
+    shotList: normaliseShotList(o.shotList ?? o.shot_list, n, (i) => !!ctx.entries[i]?.is360),
   };
 }
