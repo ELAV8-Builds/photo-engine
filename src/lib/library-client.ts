@@ -7,11 +7,13 @@
 
 import type { MediaFile } from '@/types';
 import type {
+  CurationRecord,
   JobInfo,
   LibraryItem,
   LibraryItemsPage,
   LibraryRoot,
   MediaKind,
+  MontagePick,
   QueueSnapshot,
   ServerSettings,
   SystemCapabilities,
@@ -78,6 +80,16 @@ export const libraryApi = {
 
   settings: () => request<ServerSettings>('/api/settings'),
   updateSettings: (patch: Partial<ServerSettings>) => request<ServerSettings>('/api/settings', { method: 'PUT', body: JSON.stringify(patch) }),
+
+  /** Register this Mac's Photos library as a root (server discovers the path). */
+  addPhotosLibrary: () => request<{ root: LibraryRoot; created: boolean }>('/api/system/photos-library', { method: 'POST' }),
+
+  /** Queue local-model curation for items lacking a record (or the given items; force re-grades). */
+  analyse: (opts: { itemIds?: string[]; force?: boolean } = {}) =>
+    request<{ enqueued: number; skipped: number }>('/api/curation/analyse', { method: 'POST', body: JSON.stringify(opts) }),
+  curation: async (id: string) => (await request<{ record: CurationRecord }>(`/api/library/items/${encodeURIComponent(id)}/curation`)).record,
+  select: (opts: { slots: number; videoRatio?: number; chronological?: boolean; exclude?: string[] }) =>
+    request<{ picks: MontagePick[]; considered: number }>('/api/curation/select', { method: 'POST', body: JSON.stringify(opts) }),
 };
 
 // ---------------------------------------------------------------------------
@@ -88,7 +100,19 @@ export const mediaUrl = {
   thumb: (id: string) => `/api/media/${encodeURIComponent(id)}/thumb`,
   image: (id: string, max: 1024 | 2048 | 4096 = 2048) => `/api/media/${encodeURIComponent(id)}/image?max=${max}`,
   stream: (id: string, variant: 'original' | 'proxy' = 'original') => `/api/media/${encodeURIComponent(id)}/stream?variant=${variant}`,
+  highlight: (id: string, n: number) => `/api/media/${encodeURIComponent(id)}/highlight/${n}/stream`,
+  highlightThumb: (id: string, n: number) => `/api/media/${encodeURIComponent(id)}/highlight/${n}/thumb`,
 };
+
+/** Project media id for a library item or one of its highlight windows. */
+export function libraryMediaId(itemId: string, highlightIndex?: number): string {
+  return highlightIndex === undefined ? `lib-${itemId}` : `lib-${itemId}-hl${highlightIndex}`;
+}
+
+/** Key the selection API uses to exclude what is already in the project. */
+export function pickKey(itemId: string, highlightIndex?: number): string {
+  return highlightIndex === undefined ? itemId : `${itemId}#${highlightIndex}`;
+}
 
 /** True when the browser can be expected to decode this video without a proxy. */
 export function isBrowserPlayableCodec(codec?: string): boolean {
@@ -120,7 +144,7 @@ export function libraryItemToMediaFile(item: LibraryItem, order: number, faces: 
   if (item.kind === 'video') {
     const useProxy = item.is360;
     return {
-      id: `lib-${item.id}`,
+      id: libraryMediaId(item.id),
       url: mediaUrl.stream(item.id, useProxy ? 'proxy' : 'original'),
       name: item.name,
       // The flat proxy is 16:9 regardless of the fisheye source dimensions.
@@ -139,7 +163,7 @@ export function libraryItemToMediaFile(item: LibraryItem, order: number, faces: 
   }
 
   return {
-    id: `lib-${item.id}`,
+    id: libraryMediaId(item.id),
     url: mediaUrl.image(item.id, 2048),
     name: item.name,
     width,
@@ -155,6 +179,45 @@ export function libraryItemToMediaFile(item: LibraryItem, order: number, faces: 
   };
 }
 
+/**
+ * A montage pick → MediaFile. Video highlights become their own trimmed entry:
+ * 360 clips play the flat highlight clip when it exists (already cut to the
+ * window, so the trim is relative to it), otherwise the full flat proxy with
+ * a trim range. Flat videos always use the original with a trim range.
+ */
+export function montagePickToMediaFile(pick: MontagePick, item: LibraryItem, order: number, faces: MediaFile['faces'] = []): MediaFile {
+  if (pick.kind === 'photo' || pick.highlightIndex === undefined || pick.start === undefined || pick.end === undefined) {
+    return libraryItemToMediaFile(item, order, faces);
+  }
+  const base = libraryItemToMediaFile(item, order, faces);
+  const useHighlightClip = !!item.is360 && !!pick.highlightProxyReady;
+  const windowLen = pick.end - pick.start;
+  // The highlight clip carries up to 0.5 s of margin either side of the window.
+  const lead = Math.min(HIGHLIGHT_MARGIN_SEC, pick.start);
+  return {
+    ...base,
+    id: libraryMediaId(item.id, pick.highlightIndex),
+    name: `${item.name} · ${formatClock(pick.start)}`,
+    url: useHighlightClip ? mediaUrl.highlight(item.id, pick.highlightIndex) : base.url,
+    thumbnailUrl: useHighlightClip ? mediaUrl.highlightThumb(item.id, pick.highlightIndex) : base.thumbnailUrl,
+    width: useHighlightClip ? 1920 : base.width,
+    height: useHighlightClip ? 1080 : base.height,
+    duration: useHighlightClip ? lead + windowLen + HIGHLIGHT_MARGIN_SEC : base.duration,
+    trimStart: useHighlightClip ? lead : pick.start,
+    trimEnd: useHighlightClip ? lead + windowLen : pick.end,
+    capturedAt: item.capturedAt !== undefined ? item.capturedAt + pick.start * 1000 : undefined,
+  };
+}
+
+/** Must match the server's highlight render margin. */
+const HIGHLIGHT_MARGIN_SEC = 0.5;
+
+function formatClock(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
 /** Human-readable job label for the progress UI. */
 export function describeJob(job: JobInfo): string {
   switch (job.type) {
@@ -166,6 +229,10 @@ export function describeJob(job: JobInfo): string {
       return 'Preparing 360° preview';
     case 'signals':
       return 'Measuring video quality';
+    case 'curate':
+      return 'Analysing with local AI';
+    case 'highlights':
+      return 'Rendering highlight clips';
     default:
       return job.type;
   }

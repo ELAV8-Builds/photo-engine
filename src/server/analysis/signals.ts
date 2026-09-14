@@ -160,6 +160,6 @@ export async function extractSignals(item: IndexedItem, opts: ExtractSignalsOpti
 }
 
 /** ffmpeg filter option values need ':' and '\' escaped, and we wrap in quotes. */
-function escapeFilterPath(p: string): string {
+export function escapeFilterPath(p: string): string {
   return p.replace(/\\/g, '\\\\').replace(/:/g, '\\:').replace(/'/g, "\\'");
 }

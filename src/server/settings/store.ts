@@ -20,12 +20,20 @@ const SETTINGS_FILE = () => dataPath('state', 'settings.json');
  */
 export const DEFAULT_SETTINGS: ServerSettings = {
   performanceProfile: 'balanced',
+  visionModel: 'qwen3.5:9b',
 };
 
 const PROFILES: readonly PerformanceProfile[] = ['quiet', 'balanced', 'fast'];
 
 export function isPerformanceProfile(value: unknown): value is PerformanceProfile {
   return typeof value === 'string' && (PROFILES as readonly string[]).includes(value);
+}
+
+/** Ollama model tags look like `qwen3.5:9b` or `library/name:tag`. */
+const MODEL_TAG_RE = /^[A-Za-z0-9][A-Za-z0-9._\-\/]{0,79}(?::[A-Za-z0-9._\-]{1,40})?$/;
+
+export function isModelTag(value: unknown): value is string {
+  return typeof value === 'string' && MODEL_TAG_RE.test(value);
 }
 
 /** Concrete resource limits for each profile. Exactly one job per lane regardless. */
@@ -55,6 +63,7 @@ function sanitize(raw: Partial<ServerSettings> | null | undefined): ServerSettin
     performanceProfile: isPerformanceProfile(raw?.performanceProfile)
       ? raw.performanceProfile
       : DEFAULT_SETTINGS.performanceProfile,
+    visionModel: isModelTag(raw?.visionModel) ? raw.visionModel : DEFAULT_SETTINGS.visionModel,
   };
 }
 

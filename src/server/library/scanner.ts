@@ -134,6 +134,9 @@ const PENDING_STATUS = (kind: MediaKind, is360: boolean): ItemStatus => ({
   thumb: 'pending',
   signals: kind === 'video' ? 'pending' : 'skipped',
   proxy360: kind === 'video' && is360 ? 'pending' : 'skipped',
+  curate: 'pending',
+  // Decided by the curate step: 'pending' only when 360 highlights were chosen.
+  highlights: kind === 'video' && is360 ? 'pending' : 'skipped',
 });
 
 /**

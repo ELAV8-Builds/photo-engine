@@ -92,7 +92,7 @@ export function motionScore(scene: number): number {
 }
 
 /** Bucket samples into whole seconds, averaging within each second. */
-function bucketBySecond(t: number[], values: number[], seconds: number, reducer: 'mean' | 'max'): number[] {
+export function bucketBySecond(t: number[], values: number[], seconds: number, reducer: 'mean' | 'max'): number[] {
   const sums = new Array<number>(seconds).fill(0);
   const counts = new Array<number>(seconds).fill(0);
   const maxes = new Array<number>(seconds).fill(-Infinity);

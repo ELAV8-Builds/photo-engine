@@ -33,6 +33,8 @@ function HomeContent() {
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
   const selectedCount = media.filter(p => p.selected).length;
+  // "Auto-pick best N" follows the chosen template's slot count; 12 makes a solid montage otherwise.
+  const suggestedPickCount = (selectedTemplate && SMART_TEMPLATES.find((t) => t.id === selectedTemplate)?.mediaCount) || 12;
 
   // Load project from URL query param
   useEffect(() => {
@@ -155,6 +157,7 @@ function HomeContent() {
             media={media}
             onMediaChange={setMedia}
             onNext={() => setStep('template')}
+            suggestedPickCount={suggestedPickCount}
           />
         )}
 

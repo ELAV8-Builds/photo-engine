@@ -1,6 +1,6 @@
 # PhotoForge v4.1 — Spec Tracker
 
-## Library & Local AI Curation — Phase 1 ✅ COMPLETE (see docs/handoff/PHASE-2.md)
+## Library & Local AI Curation — Phases 1–2 ✅ COMPLETE (see docs/handoff/PHASE-3.md)
 | # | Feature | Status | Notes |
 |---|---------|--------|-------|
 | L1.1 | Library folders (server-indexed, localhost-only API) | ✅ DONE | `src/server/**`, native macOS folder picker, id-addressed media, Range streaming |
@@ -8,8 +8,14 @@
 | L1.3 | Insta360 360° → flat preview proxies (ffmpeg v360) | ✅ DONE | `src/server/media/reframe.ts`; LRV-based, 40× realtime |
 | L1.4 | Stage-1 signals + deterministic technical gate | ✅ DONE | `src/server/analysis/*`; brightness/motion/sharpness/audio per second |
 | L1.5 | LibraryPanel UI + add-to-project + project save by reference | ✅ DONE | `MediaFile.file` optional; `libraryItemId` |
-| L2 | Local VLM curation (Ollama qwen3.5:9b), highlights, auto-pick | ⏳ NEXT | Spec in docs/handoff/PHASE-2.md |
-| L3 | Story layer (titles, chapters, template recommendation) | ⏳ | |
+| L2.1 | Ollama vision provider (`VisionProvider` boundary, health, inference lock) | ✅ DONE | `src/server/ai/*`; qwen3.5:9b, anchored prompt, `keep_alive 5m` |
+| L2.2 | Video highlight pipeline (sample → phash dedup → grade → fuse → NMS → refine → 360 yaw pick) | ✅ DONE | `src/server/analysis/highlights.ts`, `frames.ts`, `phash.ts`; partial-progress resume |
+| L2.3 | Highlight proxies (flat 1080p clips from the INSV) + per-highlight thumbnails | ✅ DONE | `highlights` job on the ffmpeg lane; `/api/media/[id]/highlight/[n]/stream|thumb` |
+| L2.4 | Montage selection (`selectForMontage`) + Auto-pick best N | ✅ DONE | `src/server/curation/select.ts`; `POST /api/curation/select` |
+| L2.5 | Thermal watchdog (`pmset -g therm`) pausing the queue | ✅ DONE | `src/server/jobs/thermal.ts`; `thermalPaused` in `/api/jobs` |
+| L2.6 | UI: scores, moments, sort, Analyse library, re-analyse, Auto-pick | ✅ DONE | `LibraryPanel.tsx`; highlight entries `lib-<id>-hl<n>` with trims |
+| L2.7 | macOS Photos library detection + one-click add as root | ✅ DONE (permission path verified) | `src/server/photos/library.ts`; needs Full Disk Access for the launching app |
+| L3 | Story layer (titles, chapters, template recommendation) | ⏳ NEXT | Spec in docs/handoff/PHASE-3.md |
 | L4 | Settings + optional Gemini provider | ⏳ | |
 | L5 | 360 signature moves (AI yaw, virtual pan, tiny planet) | ⏳ | |
 

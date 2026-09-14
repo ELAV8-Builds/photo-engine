@@ -20,11 +20,14 @@ import { getItem, getItemsForRoot, patchItem, replaceItems, setStep, type Indexe
 import { scanRoot } from '../library/scanner';
 import { enqueueItemWork } from '../library/work';
 import { probeCaptureTime, probeMedia } from '../media/probe';
-import { generateThumbnail, imageDimensions, proxyPath } from '../media/thumbnails';
+import { generateThumbnail, imageDimensions, proxyPath, thumbPath } from '../media/thumbnails';
 import { renderFlatProxy } from '../media/reframe';
-import { extractSignals } from '../analysis/signals';
-import { registerHandler, type JobContext } from './queue';
-import type { JobInfo } from '@/types/library';
+import { extractSignals, loadSignals } from '../analysis/signals';
+import { curatePhoto, curateVideo } from '../analysis/highlights';
+import { createOllamaProvider, hasModel, ollamaHealth, OllamaUnavailableError } from '../ai/ollama';
+import { highlightProxyPath, loadCuration, saveCuration, summarize } from '../curation/record';
+import { cancelWhere, registerHandler, type JobContext } from './queue';
+import type { CurationRecord, JobInfo } from '@/types/library';
 
 assertServer();
 
@@ -80,7 +83,9 @@ async function handlePrepare(job: JobInfo, ctx: JobContext): Promise<void> {
     } catch (err) {
       await setStep(rootId, item.id, 'probe', 'failed', errorMessage(err));
       // Without a probe nothing downstream can run; mark the rest skipped.
-      await patchItem(rootId, item.id, { status: { ...item.status, probe: 'failed', thumb: 'failed', proxy360: 'skipped', signals: 'skipped' } });
+      await patchItem(rootId, item.id, {
+        status: { ...item.status, probe: 'failed', thumb: 'failed', proxy360: 'skipped', signals: 'skipped', curate: 'skipped', highlights: 'skipped' },
+      });
       throw err;
     }
   }
@@ -182,6 +187,133 @@ async function handleSignals(job: JobInfo, ctx: JobContext): Promise<void> {
   } finally {
     await fsp.rm(tmpDir, { recursive: true, force: true });
   }
+
+  // Curation waits for signals; now it can be planned.
+  const fresh = await getItem(item.rootId, item.id);
+  if (fresh) enqueueItemWork(fresh);
+}
+
+// ---------------------------------------------------------------------------
+// curate: Stage-2 local vision-model grading (model lane)
+// ---------------------------------------------------------------------------
+
+async function handleCurate(job: JobInfo, ctx: JobContext): Promise<void> {
+  const item = await requireItem(job);
+  const budget = await activeBudget();
+  const settings = await getSettings();
+  const tmpDir = dataPath('tmp', job.id);
+
+  // A dead model server must not turn 40 queued items into 40 failures: drop
+  // the rest of the lane and leave everything pending for the next attempt.
+  const health = await ollamaHealth();
+  if (!health.running || !hasModel(health.models, settings.visionModel)) {
+    const reason = !health.running
+      ? 'Ollama is not running (start Ollama, then Analyse again)'
+      : `Model "${settings.visionModel}" is not pulled (ollama pull ${settings.visionModel})`;
+    cancelWhere((j) => j.type === 'curate' && j.id !== job.id);
+    await setStep(item.rootId, item.id, 'curate', 'pending');
+    throw new OllamaUnavailableError(reason);
+  }
+
+  await setStep(item.rootId, item.id, 'curate', 'processing');
+  const provider = createOllamaProvider(settings.visionModel);
+  try {
+    let record: CurationRecord;
+    if (item.kind === 'photo') {
+      const thumb = thumbPath(item.id);
+      if (!(await fileExists(thumb))) throw new Error('Thumbnail is not ready yet');
+      record = await curatePhoto(item, thumb, { provider, tmpDir, signal: ctx.signal, nice: budget.nice, threads: budget.threads });
+    } else {
+      const track = await loadSignals(item.id);
+      if (!track) throw new Error('Stage-1 signals are missing; rerun the scan');
+      record = await curateVideo(item, track, {
+        provider,
+        tmpDir,
+        signal: ctx.signal,
+        nice: budget.nice,
+        threads: budget.threads,
+        onProgress: ctx.report,
+      });
+    }
+    await saveCuration(record);
+    const needsProxies = record.highlights.some((h) => h.proxy === 'pending');
+    await patchItem(item.rootId, item.id, {
+      curation: summarize(record),
+      status: { ...item.status, curate: 'ready', highlights: needsProxies ? 'pending' : 'skipped' },
+    });
+  } catch (err) {
+    // Cancelled or model gone: stay pending so a later run resumes from the partial file.
+    const transient = ctx.signal.aborted || err instanceof OllamaUnavailableError;
+    await setStep(item.rootId, item.id, 'curate', transient ? 'pending' : 'failed', errorMessage(err));
+    if (err instanceof OllamaUnavailableError) cancelWhere((j) => j.type === 'curate' && j.id !== job.id);
+    throw err;
+  } finally {
+    await fsp.rm(tmpDir, { recursive: true, force: true });
+  }
+
+  const fresh = await getItem(item.rootId, item.id);
+  if (fresh) enqueueItemWork(fresh);
+}
+
+// ---------------------------------------------------------------------------
+// highlights: flat 1080p clips for each 360 highlight window (ffmpeg lane)
+// ---------------------------------------------------------------------------
+
+const HIGHLIGHT_MARGIN_SEC = 0.5;
+
+async function handleHighlights(job: JobInfo, ctx: JobContext): Promise<void> {
+  const item = await requireItem(job);
+  const budget = await activeBudget();
+  const record = await loadCuration(item.id);
+  if (!record) throw new Error('No curation record; run Analyse first');
+
+  await setStep(item.rootId, item.id, 'highlights', 'processing');
+  const pending = record.highlights.filter((h) => h.proxy !== 'ready');
+  let failed = 0;
+
+  for (let i = 0; i < pending.length; i++) {
+    if (ctx.signal.aborted) break;
+    const h = pending[i];
+    const out = highlightProxyPath(item.id, h.index);
+    if (await fileExists(out)) {
+      h.proxy = 'ready';
+      continue;
+    }
+    const start = Math.max(0, h.start - HIGHLIGHT_MARGIN_SEC);
+    const duration = Math.min((item.probe?.durationSec ?? h.end) - start, h.end - h.start + 2 * HIGHLIGHT_MARGIN_SEC);
+    const tmp = `${out}.${process.pid}.tmp.mp4`;
+    try {
+      await renderFlatProxy(item.absPath, tmp, {
+        layout: item.layout,
+        lens: h.view?.lens ?? 'a',
+        view: { yawDeg: h.view?.yawDeg ?? 0, pitchDeg: h.view?.pitchDeg ?? 0, hFovDeg: 100, vFovDeg: 70 },
+        size: { width: 1920, height: 1080 },
+        bitrate: '12M',
+        trimStartSec: start,
+        trimDurationSec: duration,
+        hasAudio: item.probe?.hasAudio ?? false,
+        signal: ctx.signal,
+        nice: budget.nice,
+        threads: budget.threads,
+        onProgress: (p) => ctx.report((i + p) / pending.length),
+        timeoutMs: 30 * 60_000,
+      });
+      await fsp.rename(tmp, out);
+      h.proxy = 'ready';
+    } catch (err) {
+      await fsp.rm(tmp, { force: true });
+      if (ctx.signal.aborted) break;
+      failed += 1;
+      h.proxy = 'failed';
+      log.warn('highlight proxy failed', { item: item.name, index: h.index, error: errorMessage(err) });
+    }
+    await saveCuration(record);
+  }
+
+  await saveCuration(record);
+  const state = ctx.signal.aborted ? 'pending' : failed > 0 && failed === pending.length ? 'failed' : 'ready';
+  await setStep(item.rootId, item.id, 'highlights', state, failed > 0 ? `${failed} highlight clip(s) failed to render` : undefined);
+  if (ctx.signal.aborted) throw new Error('Cancelled');
 }
 
 // ---------------------------------------------------------------------------
@@ -191,4 +323,6 @@ export function registerAllHandlers(): void {
   registerHandler('prepare', handlePrepare);
   registerHandler('proxy360', handleProxy360);
   registerHandler('signals', handleSignals);
+  registerHandler('curate', handleCurate);
+  registerHandler('highlights', handleHighlights);
 }

@@ -58,7 +58,7 @@ export async function getRoot(id: string): Promise<LibraryRoot | undefined> {
  * Register a folder. Idempotent: registering the same real path twice returns
  * the existing root. Nested roots are rejected to keep item identity unique.
  */
-export async function addRoot(inputPath: string): Promise<{ root: LibraryRoot; created: boolean }> {
+export async function addRoot(inputPath: string, label?: string): Promise<{ root: LibraryRoot; created: boolean }> {
   const real = await validateRootCandidate(inputPath);
   const roots = await load();
 
@@ -73,7 +73,7 @@ export async function addRoot(inputPath: string): Promise<{ root: LibraryRoot; c
   const root: LibraryRoot = {
     id: rootIdFor(real),
     path: real,
-    label: path.basename(real) || real,
+    label: label?.trim() || path.basename(real) || real,
     addedAt: Date.now(),
     itemCount: 0,
   };

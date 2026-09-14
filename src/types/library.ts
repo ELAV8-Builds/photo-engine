@@ -53,6 +53,26 @@ export interface ItemStatus {
   signals: ProcessingState;
   /** Flat, browser-playable preview for 360 videos. */
   proxy360: ProcessingState;
+  /** Local-model curation (score, highlights). Phase 2. */
+  curate: ProcessingState;
+  /** Flat 1080p clips for each chosen 360 highlight; 'skipped' for photos and flat videos. */
+  highlights: ProcessingState;
+}
+
+/**
+ * Compact curation summary carried on the item so lists can sort and badge
+ * without loading every record. The full record lives in the analysis cache.
+ */
+export interface CurationSummary {
+  /** 0–1 overall. Photos: from the grade. Videos: best highlight. */
+  score: number;
+  highlightCount: number;
+  caption?: string;
+  scene?: string;
+  people: boolean;
+  faces: boolean;
+  model: string;
+  gradedAt: number;
 }
 
 export interface LibraryItem {
@@ -75,6 +95,8 @@ export interface LibraryItem {
   hasCameraProxy: boolean;
   probe?: MediaProbe;
   status: ItemStatus;
+  /** Present once the curate step has produced a record. */
+  curation?: CurationSummary;
   /** Last error message across steps, if any. */
   error?: string;
 }
@@ -97,8 +119,10 @@ export type JobLane = 'ffmpeg' | 'model' | 'io';
  * prepare   — probe + thumbnail (+ capture time) for one item. Runs first so the grid fills fast.
  * proxy360  — flat browser-playable preview for a 360 video.
  * signals   — Stage-1 per-second measurements for a video (Phase 2 input).
+ * curate    — local vision-model grading; videos also get ranked highlight windows.
+ * highlights— flat 1080p proxies for each chosen 360 highlight window.
  */
-export type JobType = 'scan-root' | 'prepare' | 'proxy360' | 'signals';
+export type JobType = 'scan-root' | 'prepare' | 'proxy360' | 'signals' | 'curate' | 'highlights';
 
 export type JobState = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
 
@@ -118,7 +142,10 @@ export interface JobInfo {
 }
 
 export interface QueueSnapshot {
+  /** Paused by the user. */
   paused: boolean;
+  /** Paused automatically because macOS reported CPU throttling; clears itself. */
+  thermalPaused: boolean;
   queued: number;
   running: JobInfo[];
   /** Counts by state since the server started. */
@@ -140,6 +167,8 @@ export type PerformanceProfile = 'quiet' | 'balanced' | 'fast';
 
 export interface ServerSettings {
   performanceProfile: PerformanceProfile;
+  /** Ollama model tag used for frame grading (default qwen3.5:9b). */
+  visionModel: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -186,4 +215,93 @@ export interface SystemCapabilities {
   sips: boolean;
   exiftool: boolean;
   nativeFolderPicker: boolean;
+  /** Local model server state; `model` is the configured vision model and whether it is pulled. */
+  ollama: { running: boolean; version?: string; models: string[]; model: string; modelAvailable: boolean };
+  /** macOS Photos library detected on this Mac (path stays server-side). */
+  photosLibrary: PhotosLibraryInfo;
+}
+
+export interface PhotosLibraryInfo {
+  found: boolean;
+  /** Display name, e.g. "Photos Library". */
+  label?: string;
+  /** The server can read the originals folder (macOS privacy permission granted). */
+  readable: boolean;
+  /** Already registered as a library root. */
+  registeredRootId?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Stage-2 curation (local vision model)
+// ---------------------------------------------------------------------------
+
+export type FrameQuality = 'ok' | 'dark' | 'blur' | 'bright' | 'blocked';
+
+/** What the vision model says about one frame. Validated and clamped on the server. */
+export interface FrameGrade {
+  /** 0–10, how well this exact moment would play in a fast travel montage. */
+  interest: number;
+  quality: FrameQuality;
+  people: boolean;
+  faces: boolean;
+  /** 3–6 words. */
+  scene: string;
+  /** ≤ 10 words. */
+  caption: string;
+}
+
+/** Which flat view to cut out of a 360 sphere for a highlight. */
+export interface HighlightView {
+  lens: 'a' | 'b';
+  yawDeg: number;
+  pitchDeg: number;
+}
+
+export interface HighlightWindow {
+  /** Position in the record; used in ids and proxy filenames. */
+  index: number;
+  start: number;
+  end: number;
+  /** The graded frame time this window grew from. */
+  sampleT: number;
+  /** 0–1 fused score. */
+  score: number;
+  caption: string;
+  scene: string;
+  people: boolean;
+  faces: boolean;
+  /** 360 only: the yaw/lens the model preferred at sampleT. */
+  view?: HighlightView;
+  /** 360 only: the flat 1080p clip for this window. */
+  proxy?: ProcessingState;
+}
+
+export interface CurationRecord {
+  version: 1;
+  itemId: string;
+  kind: MediaKind;
+  provider: string;
+  model: string;
+  createdAt: number;
+  durationMs: number;
+  /** 0–1 overall. */
+  score: number;
+  /** Photos: the thumbnail grade. Videos: the top highlight's grade summary. */
+  grade?: FrameGrade;
+  highlights: HighlightWindow[];
+  stats: { sampled: number; graded: number; reused: number; candidates: number };
+}
+
+/** One entry in a montage plan. */
+export interface MontagePick {
+  itemId: string;
+  kind: MediaKind;
+  /** Videos only: which highlight window. */
+  highlightIndex?: number;
+  start?: number;
+  end?: number;
+  /** 360 only: the flat highlight clip has been rendered. */
+  highlightProxyReady?: boolean;
+  score: number;
+  caption?: string;
 }

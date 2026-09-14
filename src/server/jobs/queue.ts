@@ -35,6 +35,8 @@ export const PRIORITY = {
   prepare: 10,
   proxy360: 20,
   signals: 30,
+  highlights: 40,
+  curate: 50,
 } as const;
 
 export interface JobContext {
@@ -57,6 +59,8 @@ interface QueueState {
   recent: JobInfo[];
   totals: Record<JobState, number>;
   paused: boolean;
+  /** Set by the thermal watchdog; independent of the user's pause. */
+  thermalPaused: boolean;
   /** Prevents re-entrant pump() calls. */
   pumping: boolean;
 }
@@ -68,6 +72,7 @@ const state = globalSingleton<QueueState>('__photoforge_queue', () => ({
   recent: [],
   totals: { queued: 0, running: 0, done: 0, failed: 0, cancelled: 0 },
   paused: false,
+  thermalPaused: false,
   pumping: false,
 }));
 
@@ -141,7 +146,7 @@ function schedulePump(): void {
 }
 
 function pump(): void {
-  if (state.pumping || state.paused) return;
+  if (state.pumping || state.paused || state.thermalPaused) return;
   state.pumping = true;
   try {
     for (const lane of Object.keys(LANE_CONCURRENCY) as JobLane[]) {
@@ -207,6 +212,18 @@ export function resume(): void {
   schedulePump();
 }
 
+/** Thermal watchdog hook: stop dequeuing while macOS throttles the CPU. Running jobs finish. */
+export function setThermalPause(paused: boolean): void {
+  if (state.thermalPaused === paused) return;
+  state.thermalPaused = paused;
+  log.info(paused ? 'thermal pause' : 'thermal pause lifted');
+  if (!paused) schedulePump();
+}
+
+export function isThermalPaused(): boolean {
+  return state.thermalPaused;
+}
+
 /** Abort a running job or drop a queued one. */
 export function cancel(jobId: string): boolean {
   const running = state.running.get(jobId);
@@ -245,6 +262,7 @@ export function cancelWhere(predicate: (job: JobInfo) => boolean): number {
 export function snapshot(): QueueSnapshot {
   return {
     paused: state.paused,
+    thermalPaused: state.thermalPaused,
     queued: state.queued.length,
     running: runningJobs().map((j) => ({ ...j.info })),
     totals: { ...state.totals, queued: state.queued.length, running: state.running.size },

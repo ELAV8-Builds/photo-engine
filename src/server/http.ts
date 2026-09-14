@@ -6,12 +6,12 @@
 import fs from 'fs';
 import fsp from 'fs/promises';
 import path from 'path';
-import { Readable } from 'stream';
 import { NextResponse } from 'next/server';
 import { assertServer } from './runtime';
 import { createLogger, errorMessage } from './log';
 import { PathEscapeError } from './fs/safe-path';
 import { ProcessError } from './media/ffmpeg';
+import { OllamaUnavailableError } from './ai/ollama';
 
 assertServer();
 
@@ -46,6 +46,7 @@ export function handle<Args extends unknown[]>(fn: (...args: Args) => Promise<Re
     } catch (err) {
       if (err instanceof HttpError) return fail(err.status, err.message);
       if (err instanceof PathEscapeError) return fail(403, err.message);
+      if (err instanceof OllamaUnavailableError) return fail(503, err.message);
       if (err instanceof ProcessError) {
         log.error('tool failure', { message: err.message });
         return fail(500, err.message);
@@ -178,7 +179,26 @@ export async function serveFile(req: Request, absPath: string, opts: ServeFileOp
 
   if (req.method === 'HEAD') return new Response(null, { status: range ? 206 : 200, headers });
 
-  const nodeStream = fs.createReadStream(absPath, { start, end });
-  const body = Readable.toWeb(nodeStream) as unknown as ReadableStream<Uint8Array>;
-  return new Response(body, { status: range ? 206 : 200, headers });
+  return new Response(fileBodyStream(absPath, start, end), { status: range ? 206 : 200, headers });
+}
+
+/**
+ * Pull-based file → web stream with backpressure. Node 20's Readable.toWeb
+ * throws an uncaught ERR_INVALID_STATE when the browser abandons a Range
+ * request mid-chunk (every <video> seek does this), so we drive the read
+ * stream ourselves and destroy it on cancel.
+ */
+function fileBodyStream(absPath: string, start: number, end: number): ReadableStream<Uint8Array> {
+  const node = fs.createReadStream(absPath, { start, end });
+  const iterator = node[Symbol.asyncIterator]();
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      const { value, done } = await iterator.next();
+      if (done) controller.close();
+      else controller.enqueue(new Uint8Array(value.buffer, value.byteOffset, value.byteLength));
+    },
+    cancel() {
+      node.destroy();
+    },
+  });
 }

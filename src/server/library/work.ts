@@ -28,6 +28,16 @@ export function planItemJobs(item: IndexedItem): EnqueueOptions[] {
   if (item.kind === 'video' && s.signals === 'pending') {
     jobs.push({ type: 'signals', lane: 'ffmpeg', priority: PRIORITY.signals, itemId: item.id, rootId: item.rootId });
   }
+
+  // Curation needs the thumbnail (photos) or the Stage-1 track (videos). It is
+  // the cheapest thing to defer, so it always sits at the back of the queue.
+  const curateInputsReady = item.kind === 'photo' ? s.thumb === 'ready' : s.signals === 'ready';
+  if (s.curate === 'pending' && curateInputsReady) {
+    jobs.push({ type: 'curate', lane: 'model', priority: PRIORITY.curate, itemId: item.id, rootId: item.rootId });
+  }
+  if (s.curate === 'ready' && s.highlights === 'pending') {
+    jobs.push({ type: 'highlights', lane: 'ffmpeg', priority: PRIORITY.highlights, itemId: item.id, rootId: item.rootId });
+  }
   return jobs;
 }
 

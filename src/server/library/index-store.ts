@@ -64,7 +64,11 @@ async function ensureLoaded(rootId: string): Promise<Map<string, IndexedItem>> {
   return state.byRoot.get(rootId)!;
 }
 
-/** A step left in 'processing' by a crash or restart is simply pending again. */
+/**
+ * A step left in 'processing' by a crash or restart is simply pending again.
+ * Steps added after an index was written (Phase 2: curate, highlights) start
+ * pending so existing libraries pick up the new work without a rescan.
+ */
 function recoverInterrupted(item: IndexedItem): IndexedItem {
   const status = { ...item.status };
   let changed = false;
@@ -73,6 +77,14 @@ function recoverInterrupted(item: IndexedItem): IndexedItem {
       status[key] = 'pending';
       changed = true;
     }
+  }
+  if (status.curate === undefined) {
+    status.curate = 'pending';
+    changed = true;
+  }
+  if (status.highlights === undefined) {
+    status.highlights = item.kind === 'video' && item.is360 ? 'pending' : 'skipped';
+    changed = true;
   }
   return changed ? { ...item, status } : item;
 }

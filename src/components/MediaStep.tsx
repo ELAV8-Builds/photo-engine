@@ -21,6 +21,8 @@ interface MediaStepProps {
   media: MediaFile[];
   onMediaChange: (media: MediaFile[]) => void;
   onNext: () => void;
+  /** Slot count of the chosen template (drives the library's "Auto-pick best N" default). */
+  suggestedPickCount?: number;
 }
 
 /** Tracks files that failed HEIC conversion for retry */
@@ -29,7 +31,7 @@ interface FailedFile {
   error: string;
 }
 
-export default function MediaStep({ media, onMediaChange, onNext }: MediaStepProps) {
+export default function MediaStep({ media, onMediaChange, onNext, suggestedPickCount = 12 }: MediaStepProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [processing, setProcessing] = useState(false);
   const [processingMessage, setProcessingMessage] = useState('');
@@ -244,14 +246,16 @@ export default function MediaStep({ media, onMediaChange, onNext }: MediaStepPro
     () => new Set(media.map(m => m.libraryItemId).filter((id): id is string => !!id)),
     [media],
   );
+  // Exact project entries (a whole item or one highlight window), so a pick is never added twice.
+  const mediaIdsInProject = useMemo(() => new Set(media.map(m => m.id)), [media]);
 
   const addLibraryMedia = useCallback((items: MediaFile[]) => {
     const existingCount = media.length;
     const fresh = items
-      .filter(item => !item.libraryItemId || !libraryIdsInProject.has(item.libraryItemId))
+      .filter(item => !mediaIdsInProject.has(item.id))
       .map((item, i) => ({ ...item, order: existingCount + i }));
     if (fresh.length > 0) onMediaChange([...media, ...fresh]);
-  }, [media, libraryIdsInProject, onMediaChange]);
+  }, [media, mediaIdsInProject, onMediaChange]);
 
   return (
     <div className="space-y-6 step-content">
@@ -308,7 +312,12 @@ export default function MediaStep({ media, onMediaChange, onNext }: MediaStepPro
       </div>
 
       {/* Library folders (server-indexed, stays local) */}
-      <LibraryPanel inProjectIds={libraryIdsInProject} onAddMedia={addLibraryMedia} />
+      <LibraryPanel
+        inProjectIds={libraryIdsInProject}
+        inProjectMediaIds={mediaIdsInProject}
+        suggestedPickCount={suggestedPickCount}
+        onAddMedia={addLibraryMedia}
+      />
 
       {/* Failed Files Banner */}
       {failedFiles.length > 0 && (

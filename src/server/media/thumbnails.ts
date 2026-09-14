@@ -193,6 +193,45 @@ export async function ensureRendition(item: IndexedItem, max: RenditionSize, opt
   return task;
 }
 
+export function highlightThumbPath(itemId: string, index: number): string {
+  return dataPath('thumbs', `${itemId}-hl-${index}.jpg`);
+}
+
+/**
+ * Representative frame from a rendered highlight clip (its middle), so the
+ * project grid and face detection see the chosen view rather than the clip's
+ * generic lens-A thumbnail. Produced on demand and cached; shares the
+ * rendition concurrency cap.
+ */
+export async function ensureHighlightThumb(itemId: string, index: number, clipPath: string, clipDurationSec: number, opts: FfmpegOptions = {}): Promise<string> {
+  const out = highlightThumbPath(itemId, index);
+  if (await fileExists(out)) return out;
+  const existing = renditionState.inflight.get(out);
+  if (existing) return existing;
+
+  const task = (async () => {
+    const release = await acquireRenditionSlot();
+    try {
+      if (await fileExists(out)) return out;
+      await withAtomicOutput(out, async (tmp) => {
+        const seek = Math.max(0, clipDurationSec / 2);
+        const size = { width: THUMB_MAX_PX, height: Math.round((THUMB_MAX_PX * 9) / 16) };
+        await runFfmpeg(
+          ['-ss', seek.toFixed(3), '-i', clipPath],
+          ['-frames:v', '1', '-vf', `scale=${size.width}:${size.height},format=yuvj420p`, '-q:v', '3', '-f', 'image2', tmp],
+          { ...opts, timeoutMs: 60_000 },
+        );
+      });
+      return out;
+    } finally {
+      release();
+      renditionState.inflight.delete(out);
+    }
+  })();
+  renditionState.inflight.set(out, task);
+  return task;
+}
+
 /** Pixel dimensions of a produced JPEG (used to reconcile EXIF orientation). */
 export async function imageDimensions(filePath: string, signal?: AbortSignal): Promise<{ width: number; height: number } | null> {
   try {
