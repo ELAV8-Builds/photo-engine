@@ -34,6 +34,17 @@
 | L6.3 | User views survive forced re-analysis (per-item memory, matched on time overlap) | ✅ DONE | `src/server/curation/user-views.ts`; 3/3 restored on the whole-card forced run; force also cancels stale `pan360` |
 | L6.4 | Verify Gemini / `.insp` / Photos library | ⚠️ PARTIAL | `.insp` verified synthetically; Gemini needs a real key in Settings; Photos needs Full Disk Access |
 
+## Library & Local AI Curation — Phase 7 ✅ COMPLETE (see docs/handoff/PHASE-8.md)
+| # | Feature | Status | Notes |
+|---|---------|--------|-------|
+| L7.1 | Model-lane CPU bound: budget `threads` → Ollama `options.num_thread` per request | ✅ DONE | `src/server/ai/ollama.ts`; measured 5.5→1.0 mean busy cores at balanced (0.6 quiet / 1.7 fast), ≤5% latency cost; whole card 174 jobs, 0 failed, 40/40 therm samples clean |
+| L7.2 | Second moment for short clips (runner-up ≥20 s away within 15% of top) | ✅ DONE | `selectPeaks` in `highlights.ts`; 51→77 moments on the card (26 short clips gained one); 3 eye-checked (one boundary case noted); Auto-pick still prefers the stronger |
+| L7.3 | Reframe editor: pan strip (start/peak/end via `?t=`), keep-the-pan (shifted path), planet spin (`planetRotationDeg`, owner-approved schema field) | ✅ DONE | `ReframePanel.tsx`, view PUT route, `setHighlightView`, `renderTinyPlanetProxy`; keep-pan round-trip 31 s; +90° spin verified from planet frames |
+| L7.4 | Export Cancel (AbortController through render loops + bounded waits; terminate during encode) + slot/frame context in errors | ✅ DONE | `RenderStep.tsx`, `mp4-encoder.ts` (`resetFFmpeg`), `video-frame-extractor.ts`; cancel mid-render → idle + notice; full export 245 s (12 slots, 720p) |
+| L7.5 | Base-template text edits reach the expanded render (`TemplateSlot.baseIndex` + `overrideForSlot`) | ✅ DONE | `templates.ts`, `RenderStep.tsx`; "PHASE SEVEN" verified in a decoded frame of the exported MP4 |
+| L7.6 | Hygiene: `error` clears when steps recover; yaw frames named by time (`<id>-view-<t>-…`), GC owns them (+ legacy form always orphaned, peak-frame ownership) | ✅ DONE | `index-store.ts`, `record.ts`, `gc.ts`; 0 items with errors after the run; storage 404 files / 2.85 GB, 0 orphans, 0 unrecognised; 21 pure checks |
+| L7.7 | Verify Gemini / real `.insp` / Photos library | ⚠️ STILL OWNER-GATED | No key pasted, no Full Disk Access granted, no real `.insp` on the card during Phase 7 |
+
 ## Phase 1 — Fix Fundamentals ✅ COMPLETE
 | # | Feature | Status | Notes |
 |---|---------|--------|-------|

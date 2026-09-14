@@ -2,13 +2,13 @@
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { MediaFile, MusicTrack, RenderProgress, SmartTemplate, TemplateSlot, TemplateTheme, TextOverlay, TextOverlayOverride } from '@/types';
-import { SMART_TEMPLATES, assignMediaToSlots, expandTemplateForMedia, formatDuration, getSlotMediaIds, applyBeatSync } from '@/lib/templates';
+import { SMART_TEMPLATES, assignMediaToSlots, expandTemplateForMedia, formatDuration, getSlotMediaIds, applyBeatSync, overrideForSlot } from '@/lib/templates';
 import { detectBeats, quantizeSlotsToBeat, getStrongBeats } from '@/lib/beat-detect';
 import { createParticles, updateParticles, drawParticles, drawVignette, drawTintOverlay, getParticleCSS, Particle } from '@/lib/particles';
 import { drawTextOverlay, resolveTextOverlay, getBackdropPreviewCSS, getTextAnimationCSS } from '@/lib/text-renderer';
 import { EffectsEngine, templateSlotToEngineSlot, type SlotConfig } from '@/lib/effects-engine';
-import { initFFmpeg, writeFrame, writeAudio, mixAudioTracks, encodeMP4, cleanupFS } from '@/lib/mp4-encoder';
-import { getVideoElement, seekToTime, getVideoTime, loadMediaSource, disposeAllVideos } from '@/lib/video-frame-extractor';
+import { initFFmpeg, writeFrame, writeAudio, mixAudioTracks, encodeMP4, cleanupFS, resetFFmpeg } from '@/lib/mp4-encoder';
+import { abortError, getVideoElement, seekToTime, getVideoTime, loadMediaSource, disposeAllVideos } from '@/lib/video-frame-extractor';
 import { renderSplitScreen, getLayoutMediaCount } from '@/lib/split-screen';
 import { renderTransitionOverlay } from '@/lib/transition-overlays';
 import { rolesForMedia } from '@/lib/story-apply';
@@ -60,6 +60,9 @@ export default function RenderStep(props: RenderStepProps) {
     totalFrames: 0,
     message: '',
   });
+  // Phase 7: one controller per export; Cancel aborts every bounded wait in the loop.
+  const exportAbortRef = useRef<AbortController | null>(null);
+  const [exportNotice, setExportNotice] = useState<string | null>(null);
   const [previewSlotIndex, setPreviewSlotIndex] = useState(0);
   const [previewFade, setPreviewFade] = useState(true);
   const previewFadeTimer = useRef<ReturnType<typeof setTimeout>>();
@@ -542,6 +545,18 @@ export default function RenderStep(props: RenderStepProps) {
 
     const FPS = 30;
 
+    // Phase 7: everything below aborts through this controller (Cancel button).
+    const controller = new AbortController();
+    exportAbortRef.current = controller;
+    const signal = controller.signal;
+    const ensureNotAborted = () => {
+      if (signal.aborted) throw abortError();
+    };
+    // Kept outside the try so the catch can clean the virtual FS after a cancel.
+    let ffmpegForCleanup: import('@ffmpeg/ffmpeg').FFmpeg | null = null;
+    let framesWritten = 0;
+
+    setExportNotice(null);
     setProgress({ status: 'preparing', percent: 2, currentFrame: 0, totalFrames: template.slots.length, message: 'Loading video encoder...' });
 
     try {
@@ -549,6 +564,8 @@ export default function RenderStep(props: RenderStepProps) {
       const ffmpeg = await initFFmpeg((msg) => {
         setProgress(prev => ({ ...prev, message: msg }));
       });
+      ffmpegForCleanup = ffmpeg;
+      ensureNotAborted();
 
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
@@ -567,6 +584,7 @@ export default function RenderStep(props: RenderStepProps) {
       let globalFrameNumber = 0;
 
       for (let i = 0; i < template.slots.length; i++) {
+        ensureNotAborted();
         const slot = applyMixerOverrides(template.slots[i], mixerOverrides);
         const assignedMediaId = slotAssignments[i] || '';
         const assignedMedia = mediaForSlot(mediaById.get(assignedMediaId), slot);
@@ -581,66 +599,75 @@ export default function RenderStep(props: RenderStepProps) {
 
         const slotLayout = slot.layout ?? 'single';
 
-        if (slotLayout !== 'single') {
-          // Split-screen slot: composite multiple images, render through engine
-          const slotMediaIds = getSlotMediaIds(i, template, slotAssignments, mediaIds);
-          const slotMedia = slotMediaIds
-            .map(id => mediaById.get(id))
-            .filter((m): m is MediaFile => !!m);
+        try {
+          if (slotLayout !== 'single') {
+            // Split-screen slot: composite multiple images, render through engine
+            const slotMediaIds = getSlotMediaIds(i, template, slotAssignments, mediaIds);
+            const slotMedia = slotMediaIds
+              .map(id => mediaById.get(id))
+              .filter((m): m is MediaFile => !!m);
 
-          if (slotMedia.length > 0) {
-            const composite = await loadSplitScreenComposite(
-              slotMedia, slotLayout, canvas.width, canvas.height,
-            );
-            // Create a temporary MediaFile-like wrapper for the composite
-            const compositeMedia: MediaFile = {
-              ...slotMedia[0],
-              type: 'photo', // Treat composite as a photo
-            };
-            // Use the composite as the source for the effects engine
-            globalFrameNumber = await renderSlotFramesToFFmpegWithSource(
-              ctx, canvas, ffmpeg, composite, compositeMedia,
-              canvas.width, canvas.height, slot, template.theme,
-              textOverrides, i, engine, globalFrameNumber, FPS,
+            if (slotMedia.length > 0) {
+              const composite = await loadSplitScreenComposite(
+                slotMedia, slotLayout, canvas.width, canvas.height, signal,
+              );
+              // Create a temporary MediaFile-like wrapper for the composite
+              const compositeMedia: MediaFile = {
+                ...slotMedia[0],
+                type: 'photo', // Treat composite as a photo
+              };
+              // Use the composite as the source for the effects engine
+              globalFrameNumber = await renderSlotFramesToFFmpegWithSource(
+                ctx, canvas, ffmpeg, composite, compositeMedia,
+                canvas.width, canvas.height, slot, template.theme,
+                textOverrides, i, engine, globalFrameNumber, FPS, signal,
+              );
+            } else {
+              // No media — black frames
+              const frames = Math.round(slot.duration * FPS);
+              for (let f = 0; f < frames; f++) {
+                ensureNotAborted();
+                ctx.fillStyle = '#000';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                await writeFrame(ffmpeg, canvas, globalFrameNumber, undefined, signal);
+                globalFrameNumber++;
+                if (f % 10 === 0) await new Promise(r => setTimeout(r, 0));
+              }
+            }
+          } else if (assignedMedia) {
+            // Single layout — render slot frames via effects engine
+            globalFrameNumber = await renderSlotFramesToFFmpeg(
+              ctx,
+              canvas,
+              ffmpeg,
+              assignedMedia,
+              canvas.width,
+              canvas.height,
+              slot,
+              template.theme,
+              textOverrides,
+              i,
+              engine,
+              globalFrameNumber,
+              FPS,
+              signal,
             );
           } else {
-            // No media — black frames
+            // Empty slot — hold black frames
             const frames = Math.round(slot.duration * FPS);
             for (let f = 0; f < frames; f++) {
+              ensureNotAborted();
               ctx.fillStyle = '#000';
               ctx.fillRect(0, 0, canvas.width, canvas.height);
-              await writeFrame(ffmpeg, canvas, globalFrameNumber);
+              await writeFrame(ffmpeg, canvas, globalFrameNumber, undefined, signal);
               globalFrameNumber++;
               if (f % 10 === 0) await new Promise(r => setTimeout(r, 0));
             }
           }
-        } else if (assignedMedia) {
-          // Single layout — render slot frames via effects engine
-          globalFrameNumber = await renderSlotFramesToFFmpeg(
-            ctx,
-            canvas,
-            ffmpeg,
-            assignedMedia,
-            canvas.width,
-            canvas.height,
-            slot,
-            template.theme,
-            textOverrides,
-            i,
-            engine,
-            globalFrameNumber,
-            FPS,
-          );
-        } else {
-          // Empty slot — hold black frames
-          const frames = Math.round(slot.duration * FPS);
-          for (let f = 0; f < frames; f++) {
-            ctx.fillStyle = '#000';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            await writeFrame(ffmpeg, canvas, globalFrameNumber);
-            globalFrameNumber++;
-            if (f % 10 === 0) await new Promise(r => setTimeout(r, 0));
-          }
+        } catch (err) {
+          throw describeRenderError(err, `slot ${i + 1} of ${template.slots.length}${assignedMedia ? ` (${assignedMedia.name})` : ''}`, globalFrameNumber);
+        } finally {
+          framesWritten = globalFrameNumber;
         }
 
         // Render inter-slot transition
@@ -649,20 +676,27 @@ export default function RenderStep(props: RenderStepProps) {
           const nextMediaId = slotAssignments[i + 1] || '';
           const nextMedia = mediaForSlot(mediaById.get(nextMediaId), nextSlot);
           if (assignedMedia && nextMedia) {
-            globalFrameNumber = await renderTransitionFramesToFFmpeg(
-              ctx,
-              canvas,
-              ffmpeg,
-              assignedMedia,
-              nextMedia,
-              canvas.width,
-              canvas.height,
-              slot,
-              nextSlot,
-              engine,
-              globalFrameNumber,
-              FPS,
-            );
+            try {
+              globalFrameNumber = await renderTransitionFramesToFFmpeg(
+                ctx,
+                canvas,
+                ffmpeg,
+                assignedMedia,
+                nextMedia,
+                canvas.width,
+                canvas.height,
+                slot,
+                nextSlot,
+                engine,
+                globalFrameNumber,
+                FPS,
+                signal,
+              );
+            } catch (err) {
+              throw describeRenderError(err, `the transition into slot ${i + 2} (${nextMedia.name})`, globalFrameNumber);
+            } finally {
+              framesWritten = globalFrameNumber;
+            }
           }
         }
       }
@@ -679,50 +713,59 @@ export default function RenderStep(props: RenderStepProps) {
         const lastMediaId = slotAssignments[lastSlotIndex] || '';
         const lastMedia = mediaForSlot(mediaById.get(lastMediaId), lastSlot);
 
-        if (lastMedia) {
-          const lastSource = await loadMediaImage(lastMedia);
-          const isVideo = lastMedia.type === 'video' && lastSource instanceof HTMLVideoElement;
-          const { fx, fy } = getFocusPoint(lastMedia, lastSlot.holdPoint);
-          const lastSlotConfig = templateSlotToEngineSlot(lastSlot, fx, fy);
-          const lastSlotConfigs: SlotConfig[] = [lastSlotConfig];
-          const lastImageMap = new Map<number, CanvasImageSource>();
-          lastImageMap.set(0, lastSource);
+        try {
+          if (lastMedia) {
+            const lastSource = await loadMediaImage(lastMedia, signal);
+            const isVideo = lastMedia.type === 'video' && lastSource instanceof HTMLVideoElement;
+            const { fx, fy } = getFocusPoint(lastMedia, lastSlot.holdPoint);
+            const lastSlotConfig = templateSlotToEngineSlot(lastSlot, fx, fy);
+            const lastSlotConfigs: SlotConfig[] = [lastSlotConfig];
+            const lastImageMap = new Map<number, CanvasImageSource>();
+            lastImageMap.set(0, lastSource);
 
-          for (let f = 0; f < fadeFrames; f++) {
-            const fadeProgress = f / fadeFrames;
+            for (let f = 0; f < fadeFrames; f++) {
+              ensureNotAborted();
+              const fadeProgress = f / fadeFrames;
 
-            // Hold on the last frame of the slot
-            if (isVideo) {
-              const videoTime = getVideoTime(1, lastMedia);
-              await seekToTime(lastSource as HTMLVideoElement, videoTime);
+              // Hold on the last frame of the slot
+              if (isVideo) {
+                const videoTime = getVideoTime(1, lastMedia);
+                await seekToTime(lastSource as HTMLVideoElement, videoTime, undefined, signal);
+              }
+
+              const engineFrame = engine.calculateFrame(lastSlotConfig.duration * 0.99, lastSlotConfigs);
+              engine.renderFrame(ctx, engineFrame, lastSlotConfigs, lastImageMap);
+
+              // Apply progressive black overlay
+              ctx.fillStyle = `rgba(0, 0, 0, ${fadeProgress})`;
+              ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+              await writeFrame(ffmpeg, canvas, globalFrameNumber, undefined, signal);
+              globalFrameNumber++;
+
+              if (f % 5 === 0) await new Promise(r => setTimeout(r, 0));
             }
-
-            const engineFrame = engine.calculateFrame(lastSlotConfig.duration * 0.99, lastSlotConfigs);
-            engine.renderFrame(ctx, engineFrame, lastSlotConfigs, lastImageMap);
-
-            // Apply progressive black overlay
-            ctx.fillStyle = `rgba(0, 0, 0, ${fadeProgress})`;
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            await writeFrame(ffmpeg, canvas, globalFrameNumber);
-            globalFrameNumber++;
-
-            if (f % 5 === 0) await new Promise(r => setTimeout(r, 0));
+          } else {
+            // No media for last slot — just fade black frames
+            for (let f = 0; f < fadeFrames; f++) {
+              ensureNotAborted();
+              ctx.fillStyle = '#000';
+              ctx.fillRect(0, 0, canvas.width, canvas.height);
+              await writeFrame(ffmpeg, canvas, globalFrameNumber, undefined, signal);
+              globalFrameNumber++;
+            }
           }
-        } else {
-          // No media for last slot — just fade black frames
-          for (let f = 0; f < fadeFrames; f++) {
-            ctx.fillStyle = '#000';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            await writeFrame(ffmpeg, canvas, globalFrameNumber);
-            globalFrameNumber++;
-          }
+        } catch (err) {
+          throw describeRenderError(err, `the fade-out${lastMedia ? ` (${lastMedia.name})` : ''}`, globalFrameNumber);
+        } finally {
+          framesWritten = globalFrameNumber;
         }
       }
 
       const totalFrames = globalFrameNumber;
 
       // 3. Mix and write audio (if any)
+      ensureNotAborted();
       setProgress(prev => ({ ...prev, percent: 62, message: 'Processing audio...' }));
       const tracksToUse = musicTracks.length > 0 ? musicTracks : (music ? [music] : []);
       let hasAudio = false;
@@ -732,13 +775,16 @@ export default function RenderStep(props: RenderStepProps) {
           tracksToUse.map(t => ({ url: t.url, file: t.file })),
           template.totalDuration,
         );
+        ensureNotAborted();
         if (audioBlob) {
           await writeAudio(ffmpeg, audioBlob, 'audio.wav');
           hasAudio = true;
         }
       }
 
-      // 4. Encode MP4 with ffmpeg
+      // 4. Encode MP4 with ffmpeg. Cancel here terminates the worker (exec cannot
+      // be interrupted any other way); the catch below turns that into the notice.
+      ensureNotAborted();
       setProgress(prev => ({
         ...prev,
         status: 'encoding',
@@ -779,6 +825,20 @@ export default function RenderStep(props: RenderStepProps) {
         }
       }
     } catch (e) {
+      if (controller.signal.aborted) {
+        // Cancelled: clear the virtual FS if the worker is still alive (a cancel
+        // during encoding terminated it — its FS died with it) and say so calmly.
+        if (ffmpegForCleanup) {
+          try {
+            await cleanupFS(ffmpegForCleanup, framesWritten);
+          } catch {
+            // Worker terminated — nothing to clean.
+          }
+        }
+        setExportNotice('Export cancelled — nothing was saved.');
+        setProgress({ status: 'idle', percent: 0, currentFrame: 0, totalFrames: 0, message: '' });
+        return;
+      }
       console.error('[Export] MP4 render failed:', e);
       setProgress({
         status: 'error',
@@ -788,8 +848,18 @@ export default function RenderStep(props: RenderStepProps) {
         message: '',
         error: e instanceof Error ? e.message : 'MP4 export failed',
       });
+    } finally {
+      if (exportAbortRef.current === controller) exportAbortRef.current = null;
     }
   }, [template, slotAssignments, selectedMedia, mediaById, aspectRatio, outputQuality, music, textOverrides, mixerOverrides, musicTracks, onExportComplete]);
+
+  /** Phase 7: stop the export. During encoding the WASM worker must be killed. */
+  const cancelExport = useCallback(() => {
+    const controller = exportAbortRef.current;
+    if (!controller || controller.signal.aborted) return;
+    controller.abort();
+    if (progress.status === 'encoding') resetFFmpeg();
+  }, [progress.status]);
 
   const isRendering = progress.status === 'rendering' || progress.status === 'encoding' || progress.status === 'preparing';
 
@@ -978,7 +1048,8 @@ export default function RenderStep(props: RenderStepProps) {
 
           {/* Text preview (animated with backdrop) */}
           {(() => {
-            const override = textOverrides[previewSlotIndex];
+            // Phase 7: overrides are keyed by base-template slot; map through the expanded slot.
+            const override = currentSlot ? overrideForSlot(textOverrides, currentSlot, previewSlotIndex) : undefined;
             let resolved: TextOverlay | null = null;
             if (currentSlot?.textOverlay) {
               resolved = resolveTextOverlay(currentSlot.textOverlay, override);
@@ -1113,6 +1184,22 @@ export default function RenderStep(props: RenderStepProps) {
         </div>
       </div>
 
+      {/* Cancelled-export notice (Phase 7) */}
+      {progress.status === 'idle' && exportNotice && (
+        <div className="card-glow p-4 flex items-center justify-between gap-3">
+          <p className="text-sm text-text-secondary" role="status">
+            {exportNotice}
+          </p>
+          <button
+            type="button"
+            onClick={() => setExportNotice(null)}
+            className="text-xs text-text-muted hover:text-white shrink-0"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Render Progress */}
       {progress.status !== 'idle' && (
         <div className="card-glow p-5">
@@ -1157,6 +1244,9 @@ export default function RenderStep(props: RenderStepProps) {
               <div className="progress-bar">
                 <div className="progress-bar-fill" style={{ width: `${progress.percent}%` }} />
               </div>
+              <button type="button" onClick={cancelExport} className="btn-outline mt-3 text-xs">
+                Cancel export
+              </button>
             </div>
           )}
         </div>
@@ -1242,6 +1332,16 @@ function applyMixerOverrides(slot: TemplateSlot, overrides: MixerOverrides): Tem
   return modified;
 }
 
+/**
+ * Phase 7: prefix a render failure with where it happened (slot, media, frame)
+ * so a stall traces to a clip. Cancellations pass through untouched.
+ */
+function describeRenderError(err: unknown, where: string, frame: number): Error {
+  const e = err instanceof Error ? err : new Error(String(err));
+  if (e.name === 'AbortError') return e;
+  return new Error(`Export failed at ${where} (frame ${frame}): ${e.message}`);
+}
+
 function getResolution(aspect: string, quality: string): { width: number; height: number } {
   const q = quality === '4k' ? 2160 : quality === '1080p' ? 1080 : 720;
   switch (aspect) {
@@ -1279,14 +1379,16 @@ function mediaForSlot(media: MediaFile | undefined, slot: TemplateSlot): MediaFi
   return { ...media, url: media.planetUrl, width: 1080, height: 1080, faces: [] };
 }
 
-function loadMediaImage(media: MediaFile): Promise<CanvasImageSource> {
+function loadMediaImage(media: MediaFile, signal?: AbortSignal): Promise<CanvasImageSource> {
   if (media.type === 'video') {
     // Return a video element seeked to trim start for real frame rendering
     return getVideoElement(media).then(async (video) => {
       const startTime = media.trimStart ?? 0;
-      await seekToTime(video, startTime);
+      await seekToTime(video, startTime, undefined, signal);
       return video as CanvasImageSource;
-    }).catch(() => {
+    }).catch((err) => {
+      // A cancel must not fall back to a thumbnail — it must stop the export.
+      if (err instanceof Error && err.name === 'AbortError') throw err;
       // Fallback to thumbnail image if video loading fails
       return new Promise<HTMLImageElement>((resolve, reject) => {
         const img = new Image();
@@ -1317,10 +1419,14 @@ async function loadSplitScreenComposite(
   layout: import('@/types').SlotLayout,
   width: number,
   height: number,
+  signal?: AbortSignal,
 ): Promise<CanvasImageSource> {
-  // Load all media sources
+  // Load all media sources (a cancel rethrows; other failures fall back to null)
   const sources = await Promise.all(
-    mediaItems.map(m => loadMediaImage(m).catch(() => null)),
+    mediaItems.map(m => loadMediaImage(m, signal).catch((err) => {
+      if (err instanceof Error && err.name === 'AbortError') throw err;
+      return null;
+    })),
   );
 
   // Filter out failed loads
@@ -1485,7 +1591,7 @@ async function renderSlotToCanvas(
     }
 
     // Text overlay (base from template or user-added via overrides)
-    drawSlotText(ctx, slot, textOverrides[slotIndex], width, height, t);
+    drawSlotText(ctx, slot, overrideForSlot(textOverrides, slot, slotIndex), width, height, t);
 
     // Yield to browser every 5 frames to prevent blocking
     if (frame % 5 === 0) {
@@ -1583,8 +1689,9 @@ async function renderSlotFramesToFFmpeg(
   engine: EffectsEngine,
   startFrame: number,
   fps: number,
+  signal?: AbortSignal,
 ): Promise<number> {
-  const source = await loadMediaImage(media);
+  const source = await loadMediaImage(media, signal);
   const isVideo = media.type === 'video' && source instanceof HTMLVideoElement;
   const frames = Math.round(slot.duration * fps);
   const { fx, fy } = getFocusPoint(media, slot.holdPoint);
@@ -1604,13 +1711,14 @@ async function renderSlotFramesToFFmpeg(
   let frameNumber = startFrame;
 
   for (let frame = 0; frame < frames; frame++) {
+    if (signal?.aborted) throw abortError();
     const t = frames > 1 ? frame / (frames - 1) : 0;
     const globalTime = t * slotConfig.duration;
 
     // For video media, seek to the correct time for this frame
     if (isVideo) {
       const videoTime = getVideoTime(t, media);
-      await seekToTime(source as HTMLVideoElement, videoTime);
+      await seekToTime(source as HTMLVideoElement, videoTime, undefined, signal);
     }
 
     const engineFrame = engine.calculateFrame(globalTime, slotConfigs);
@@ -1627,10 +1735,10 @@ async function renderSlotFramesToFFmpeg(
       drawParticles(ctx, particles, width, height);
       particles = updateParticles(particles, 1 / fps, width, height);
     }
-    drawSlotText(ctx, slot, textOverrides[slotIndex], width, height, t);
+    drawSlotText(ctx, slot, overrideForSlot(textOverrides, slot, slotIndex), width, height, t);
 
     // Write frame to ffmpeg virtual FS
-    await writeFrame(ffmpeg, canvas, frameNumber);
+    await writeFrame(ffmpeg, canvas, frameNumber, undefined, signal);
     frameNumber++;
 
     // Yield to browser every 5 frames to prevent blocking
@@ -1660,11 +1768,12 @@ async function renderTransitionFramesToFFmpeg(
   engine: EffectsEngine,
   startFrame: number,
   fps: number,
+  signal?: AbortSignal,
 ): Promise<number> {
   if (toSlot.transition === 'none') return startFrame;
 
-  const fromSource = await loadMediaImage(fromMedia);
-  const toSource = await loadMediaImage(toMedia);
+  const fromSource = await loadMediaImage(fromMedia, signal);
+  const toSource = await loadMediaImage(toMedia, signal);
   const fromIsVideo = fromMedia.type === 'video' && fromSource instanceof HTMLVideoElement;
   const toIsVideo = toMedia.type === 'video' && toSource instanceof HTMLVideoElement;
 
@@ -1685,6 +1794,7 @@ async function renderTransitionFramesToFFmpeg(
   let frameNumber = startFrame;
 
   for (let frame = 0; frame < frames; frame++) {
+    if (signal?.aborted) throw abortError();
     const t = frames > 1 ? frame / (frames - 1) : 1;
     const transStart = fromConfig.duration - transDuration;
     const globalTime = transStart + t * transDuration;
@@ -1694,12 +1804,12 @@ async function renderTransitionFramesToFFmpeg(
       // From video is near its end during transition
       const fromProgress = Math.min(1, (transStart + t * transDuration) / fromConfig.duration);
       const fromTime = getVideoTime(fromProgress, fromMedia);
-      await seekToTime(fromSource as HTMLVideoElement, fromTime);
+      await seekToTime(fromSource as HTMLVideoElement, fromTime, undefined, signal);
     }
     if (toIsVideo) {
       // To video starts from beginning during transition
       const toTime = getVideoTime(t * 0.1, toMedia); // First 10% of clip during transition
-      await seekToTime(toSource as HTMLVideoElement, toTime);
+      await seekToTime(toSource as HTMLVideoElement, toTime, undefined, signal);
     }
 
     const engineFrame = engine.calculateFrame(globalTime, slotConfigs);
@@ -1711,7 +1821,7 @@ async function renderTransitionFramesToFFmpeg(
     }
 
     // Write frame to ffmpeg virtual FS
-    await writeFrame(ffmpeg, canvas, frameNumber);
+    await writeFrame(ffmpeg, canvas, frameNumber, undefined, signal);
     frameNumber++;
 
     // Yield every 3 frames
@@ -1743,6 +1853,7 @@ async function renderSlotFramesToFFmpegWithSource(
   engine: EffectsEngine,
   startFrame: number,
   fps: number,
+  signal?: AbortSignal,
 ): Promise<number> {
   const frames = Math.round(slot.duration * fps);
   const { fx, fy } = getFocusPoint(media, slot.holdPoint);
@@ -1762,6 +1873,7 @@ async function renderSlotFramesToFFmpegWithSource(
   let frameNumber = startFrame;
 
   for (let frame = 0; frame < frames; frame++) {
+    if (signal?.aborted) throw abortError();
     const t = frames > 1 ? frame / (frames - 1) : 0;
     const globalTime = t * slotConfig.duration;
 
@@ -1779,9 +1891,9 @@ async function renderSlotFramesToFFmpegWithSource(
       drawParticles(ctx, particles, width, height);
       particles = updateParticles(particles, 1 / fps, width, height);
     }
-    drawSlotText(ctx, slot, textOverrides[slotIndex], width, height, t);
+    drawSlotText(ctx, slot, overrideForSlot(textOverrides, slot, slotIndex), width, height, t);
 
-    await writeFrame(ffmpeg, canvas, frameNumber);
+    await writeFrame(ffmpeg, canvas, frameNumber, undefined, signal);
     frameNumber++;
 
     if (frame % 5 === 0) {

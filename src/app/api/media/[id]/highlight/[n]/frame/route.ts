@@ -1,6 +1,6 @@
 import { badRequest, handle, IMMUTABLE_PRIVATE, notFound, serveFile } from '@/server/http';
 import { resolveItem } from '@/server/library/service';
-import { loadCuration, viewFramePath } from '@/server/curation/record';
+import { HIGHLIGHT_FRAME_MARGIN_SEC, loadCuration, viewFramePath } from '@/server/curation/record';
 import { ensureViewFrame } from '@/server/media/thumbnails';
 import { budgetFor, getSettings } from '@/server/settings/store';
 import { PAN_PITCH_LIMIT_DEG, PAN_YAW_LIMIT_DEG } from '@/server/media/pan';
@@ -16,9 +16,11 @@ function angle(raw: string | null, limit: number, name: string): number {
 }
 
 /**
- * Phase 5 yaw editor preview: one 640×360 flat frame of highlight n at the
- * window's peak, for ?lens=a|b&yaw=&pitch= (whole degrees, clamped). Cached
- * per rounded angle; generation shares the rendition concurrency cap.
+ * Phase 5 yaw editor preview: one 640×360 flat frame of highlight n, for
+ * ?lens=a|b&yaw=&pitch= (whole degrees, clamped). Phase 7 adds ?t= (seconds,
+ * 0.1 s resolution) so the pan strip can show the window's start and end; it
+ * must land inside the window ± the render margin. Default is the window's
+ * peak. Cached per (time, angle); generation shares the rendition concurrency cap.
  */
 export const GET = handle(async (req: Request, { params }: { params: { id: string; n: string } }) => {
   if (!/^\d{1,2}$/.test(params.n)) throw badRequest('Highlight index must be a small integer');
@@ -34,8 +36,19 @@ export const GET = handle(async (req: Request, { params }: { params: { id: strin
   const yawDeg = angle(url.searchParams.get('yaw'), PAN_YAW_LIMIT_DEG, 'yaw');
   const pitchDeg = angle(url.searchParams.get('pitch'), PAN_PITCH_LIMIT_DEG, 'pitch');
 
+  const tRaw = url.searchParams.get('t');
+  let atSec = h.sampleT;
+  if (tRaw !== null && tRaw !== '') {
+    const t = Number(tRaw);
+    if (!Number.isFinite(t)) throw badRequest('"t" must be a number');
+    const lo = Math.max(0, h.start - HIGHLIGHT_FRAME_MARGIN_SEC);
+    const hi = h.end + HIGHLIGHT_FRAME_MARGIN_SEC;
+    if (t < lo || t > hi) throw badRequest(`"t" must be within this moment (${lo.toFixed(1)}–${hi.toFixed(1)} s)`);
+    atSec = Math.round(t * 10) / 10;
+  }
+
   const budget = budgetFor((await getSettings()).performanceProfile);
-  const p = await ensureViewFrame(item, h.sampleT, lensRaw, { yawDeg, pitchDeg }, viewFramePath(item.id, h.index, lensRaw, yawDeg, pitchDeg), {
+  const p = await ensureViewFrame(item, atSec, lensRaw, { yawDeg, pitchDeg }, viewFramePath(item.id, atSec, lensRaw, yawDeg, pitchDeg), {
     nice: budget.nice,
     threads: budget.threads,
   });

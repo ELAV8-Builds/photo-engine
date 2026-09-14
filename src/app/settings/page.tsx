@@ -176,7 +176,9 @@ export default function SettingsPage() {
             <h2 id="perf-heading" className="text-white font-semibold text-base">
               Performance
             </h2>
-            <p className="text-text-muted text-sm mt-1">How much of this Mac background work may use. Exactly one heavy job runs per lane regardless.</p>
+            <p className="text-text-muted text-sm mt-1">
+              How much of this Mac background work may use. The thread cap bounds both ffmpeg and the local AI model (Ollama), and exactly one heavy job runs per lane regardless.
+            </p>
           </div>
           <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Performance profile">
             {PROFILES.map((p) => {

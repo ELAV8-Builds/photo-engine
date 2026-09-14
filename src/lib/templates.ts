@@ -1,4 +1,4 @@
-import { SmartTemplate, Template, TemplateSlot } from '@/types';
+import { SmartTemplate, Template, TemplateSlot, TextOverlayOverride } from '@/types';
 import type { ShotRole } from '@/types/library';
 
 /**
@@ -1388,6 +1388,8 @@ export function expandTemplateForMedia(
       postEffects: sourceSlot.postEffects?.map(e => ({ ...e, params: e.params ? { ...e.params } : undefined })),
       // Deep-clone textOverlay
       textOverlay: sourceSlot.textOverlay ? { ...sourceSlot.textOverlay } : undefined,
+      // Phase 7: remember the base slot so text overrides (keyed by base index) can follow.
+      baseIndex: i % baseCount,
     };
 
     // For slots beyond the base template, vary the text overlays to avoid repetition
@@ -1496,6 +1498,30 @@ export function expandTemplateForMedia(
     fadeOutDuration: template.fadeOutDuration ?? 0.8,
   };
   return roles ? applyShotRoles(expanded, roles) : expanded;
+}
+
+/**
+ * Phase 7 (§3.4): the user edits text on the BASE template's slots (TemplateStep),
+ * while the render walks the EXPANDED template. This resolves which override an
+ * expanded slot should honour:
+ *  - patches and removals of a base overlay follow every clone that still
+ *    carries that overlay (so an edited or removed title stays edited/removed
+ *    on repeats the expansion kept);
+ *  - a user-added overlay (the base slot had none) applies only at the base
+ *    occurrence — repeating user text on every clone would multiply it;
+ *  - clones whose text the expansion deliberately dropped stay silent.
+ * Unexpanded templates have no baseIndex, so the mapping is the identity.
+ */
+export function overrideForSlot(
+  overrides: Record<number, TextOverlayOverride>,
+  slot: TemplateSlot,
+  slotIndex: number,
+): TextOverlayOverride | undefined {
+  const base = slot.baseIndex ?? slotIndex;
+  const override = overrides[base];
+  if (override === undefined) return undefined;
+  if (!slot.textOverlay && slotIndex !== base && override !== null) return undefined;
+  return override;
 }
 
 /** Longest a breather may hold; keeps calm shots from stalling a fast template. */

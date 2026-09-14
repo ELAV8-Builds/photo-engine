@@ -67,31 +67,68 @@ export async function initFFmpeg(
   return ffmpegInstance!;
 }
 
+/**
+ * Phase 7: kill the ffmpeg.wasm worker and forget the singleton. The only way
+ * to interrupt a running `exec` (Cancel during encoding) is to terminate the
+ * worker; the next export reloads the core from scratch.
+ */
+export function resetFFmpeg(): void {
+  try {
+    ffmpegInstance?.terminate();
+  } catch {
+    // Already dead — that is the goal.
+  }
+  ffmpegInstance = null;
+  ffmpegLoaded = false;
+  ffmpegLoading = null;
+}
+
 /** A 4K JPEG capture plus a worker write takes tens of milliseconds; a wait this long means the worker is gone. */
 export const FRAME_WRITE_TIMEOUT_MS = 20_000;
+
+/** Phase 7: cancellation error, distinguishable from a real failure by name. */
+function abortError(): Error {
+  const err = new Error('Export cancelled');
+  err.name = 'AbortError';
+  return err;
+}
 
 /**
  * Phase 6: reject when `promise` has not settled within `ms`, so a dead
  * ffmpeg worker or a stuck canvas surfaces as an error instead of a silent hang.
+ * Phase 7: an AbortSignal rejects the wait immediately (export Cancel).
  */
-export function withTimeout<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
+export function withTimeout<T>(promise: Promise<T>, ms: number, what: string, signal?: AbortSignal): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
   const deadline = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new Error(`${what} did not finish within ${Math.round(ms / 1000)} s`)), ms);
+    if (signal) {
+      if (signal.aborted) {
+        reject(abortError());
+        return;
+      }
+      onAbort = () => reject(abortError());
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
   });
-  return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
+  return Promise.race([promise, deadline]).finally(() => {
+    clearTimeout(timer);
+    if (signal && onAbort) signal.removeEventListener('abort', onAbort);
+  });
 }
 
 /**
  * Capture a canvas frame as JPEG and write it to ffmpeg's virtual filesystem.
  * Uses JPEG instead of PNG for ~5x smaller files and faster encoding.
- * Both waits are bounded (see FRAME_WRITE_TIMEOUT_MS).
+ * Both waits are bounded (see FRAME_WRITE_TIMEOUT_MS) and abortable (Phase 7).
  */
 export async function writeFrame(
   ffmpeg: FFmpeg,
   canvas: HTMLCanvasElement,
   frameNumber: number,
   quality: number = 0.92,
+  signal?: AbortSignal,
 ): Promise<void> {
   const fileName = `frame_${String(frameNumber).padStart(6, '0')}.jpg`;
 
@@ -106,10 +143,11 @@ export async function writeFrame(
     }),
     FRAME_WRITE_TIMEOUT_MS,
     `Capturing frame ${frameNumber}`,
+    signal,
   );
 
   const buffer = new Uint8Array(await blob.arrayBuffer());
-  await withTimeout(ffmpeg.writeFile(fileName, buffer), FRAME_WRITE_TIMEOUT_MS, `Writing frame ${frameNumber} to the encoder`);
+  await withTimeout(ffmpeg.writeFile(fileName, buffer), FRAME_WRITE_TIMEOUT_MS, `Writing frame ${frameNumber} to the encoder`, signal);
 }
 
 /**

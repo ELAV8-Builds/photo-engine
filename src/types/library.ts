@@ -339,6 +339,8 @@ export interface HighlightWindow {
   panProxy?: ProcessingState;
   /** Phase 5: the square tiny-planet clip. */
   planetProxy?: ProcessingState;
+  /** Phase 7 (§3.3): user-chosen spin of the tiny planet — yaw of the `sg` render, ±180° in 15° steps. Absent = 0. */
+  planetRotationDeg?: number;
 }
 
 export interface CurationRecord {

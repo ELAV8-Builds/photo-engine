@@ -5,11 +5,16 @@
  * lens, yaw (±45°) and pitch (±35°), previewed with a server-rendered frame at
  * the window's peak. Apply re-renders the highlight's clips on the server and
  * hands back the media entry with cache-busted URLs.
+ *
+ * Phase 7 (§3.3): moments with a real pan also show a three-frame strip
+ * (start / peak / end of the view path) so the user sees what the pan passes
+ * through, and Apply offers "Keep the pan" (the whole path shifts by the
+ * user's adjustment) versus "Static view" (the pre-Phase-7 behaviour).
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MediaFile } from '@/types';
-import type { HighlightWindow } from '@/types/library';
+import type { HighlightWindow, ViewKeyframe } from '@/types/library';
 import { libraryApi, LibraryApiError, mediaUrl } from '@/lib/library-client';
 
 interface ReframePanelProps {
@@ -39,12 +44,21 @@ export default function ReframePanel({ media, onApplied, onClose }: ReframePanel
   const [initial, setInitial] = useState<{ lens: 'a' | 'b'; yaw: number; pitch: number } | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  // Phase 7: the window's peak time, view path (pan strip) and planet state.
+  const [win, setWin] = useState<{ sampleT: number; path: ViewKeyframe[]; planet?: string } | null>(null);
+  const [panMode, setPanMode] = useState<'pan' | 'static'>('static');
+  const [stripUrls, setStripUrls] = useState<Array<{ label: string; t: number; url: string }> | null>(null);
+  const [planetRot, setPlanetRot] = useState(0);
+  const [initialRot, setInitialRot] = useState(0);
   const [busy, setBusy] = useState<'apply' | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Current view from the curation record.
+  const hasPan = (win?.path.length ?? 0) >= 2;
+  const hasPlanet = !!win && win.planet !== undefined && win.planet !== 'skipped';
+
+  // Current view + path from the curation record.
   useEffect(() => {
     if (!ref) return;
     let cancelled = false;
@@ -58,6 +72,12 @@ export default function ReframePanel({ media, onApplied, onClose }: ReframePanel
         setYaw(v.yawDeg);
         setPitch(v.pitchDeg);
         setInitial({ lens: v.lens, yaw: v.yawDeg, pitch: v.pitchDeg });
+        const path = h?.viewPath ?? [];
+        setWin(h ? { sampleT: h.sampleT, path, planet: h.planetProxy } : null);
+        setPanMode(path.length >= 2 ? 'pan' : 'static');
+        const rot = h?.planetRotationDeg ?? 0;
+        setPlanetRot(rot);
+        setInitialRot(rot);
       })
       .catch((err) => !cancelled && setError(err instanceof LibraryApiError ? err.message : 'Could not load this moment'));
     return () => {
@@ -65,53 +85,96 @@ export default function ReframePanel({ media, onApplied, onClose }: ReframePanel
     };
   }, [ref]);
 
-  // Debounced preview frame.
+  // Debounced preview frame (and, for panning moments, the start/peak/end strip
+  // with the user's adjustment applied to the whole path, clamped like the server).
   useEffect(() => {
     if (!ref || !initial) return;
     if (debounce.current) clearTimeout(debounce.current);
     setPreviewLoading(true);
     debounce.current = setTimeout(() => {
       setPreviewUrl(mediaUrl.highlightFrame(ref.itemId, ref.index, lens, yaw, pitch));
+      if (win && win.path.length >= 2) {
+        const clampTo = (v: number, limit: number) => Math.max(-limit, Math.min(limit, Math.round(v)));
+        const shifted = (k: ViewKeyframe) =>
+          mediaUrl.highlightFrame(ref.itemId, ref.index, lens, clampTo(k.yawDeg + (yaw - initial.yaw), YAW_LIMIT), clampTo(k.pitchDeg + (pitch - initial.pitch), PITCH_LIMIT), k.t);
+        const first = win.path[0];
+        const last = win.path[win.path.length - 1];
+        setStripUrls([
+          { label: 'Start', t: first.t, url: shifted(first) },
+          { label: 'Peak', t: win.sampleT, url: mediaUrl.highlightFrame(ref.itemId, ref.index, lens, yaw, pitch, win.sampleT) },
+          { label: 'End', t: last.t, url: shifted(last) },
+        ]);
+      } else {
+        setStripUrls(null);
+      }
     }, PREVIEW_DEBOUNCE_MS);
     return () => {
       if (debounce.current) clearTimeout(debounce.current);
     };
-  }, [ref, initial, lens, yaw, pitch]);
+  }, [ref, initial, lens, yaw, pitch, win]);
 
-  const changed = !!initial && (initial.lens !== lens || initial.yaw !== yaw || initial.pitch !== pitch);
+  const viewChanged = !!initial && (initial.lens !== lens || initial.yaw !== yaw || initial.pitch !== pitch);
+  // Switching a panning moment to "Static view" or spinning the planet are changes on their own.
+  const changed = viewChanged || (hasPan && panMode === 'static') || (hasPlanet && planetRot !== initialRot);
 
   const apply = useCallback(async () => {
     if (!ref) return;
+    const keepPan = hasPan && panMode === 'pan';
     setBusy('apply');
     setError(null);
-    setStatus('Re-rendering this moment with the new view…');
+    setStatus(keepPan ? 'Re-rendering this moment with the shifted pan…' : 'Re-rendering this moment with the new view…');
     try {
-      const { highlight } = await libraryApi.setHighlightView(ref.itemId, ref.index, { lens, yawDeg: yaw, pitchDeg: pitch });
+      const { highlight } = await libraryApi.setHighlightView(ref.itemId, ref.index, {
+        lens,
+        yawDeg: yaw,
+        pitchDeg: pitch,
+        keepPan,
+        ...(hasPlanet ? { planetRotationDeg: planetRot } : {}),
+      });
+      // The server may have collapsed a shifted path that no longer sweeps enough.
+      const waitPan = highlight.panProxy === 'pending';
+      const waitPlanet = hasPlanet && planetRot !== initialRot;
       const deadline = Date.now() + RENDER_TIMEOUT_MS;
       let latest: HighlightWindow = highlight;
-      while (latest.proxy !== 'ready' && latest.proxy !== 'failed' && Date.now() < deadline) {
+      const settled = (w: HighlightWindow) =>
+        (w.proxy === 'ready' || w.proxy === 'failed') &&
+        (!waitPan || w.panProxy === 'ready' || w.panProxy === 'failed' || w.panProxy === undefined) &&
+        (!waitPlanet || w.planetProxy === 'ready' || w.planetProxy === 'failed' || w.planetProxy === 'skipped');
+      while (!settled(latest) && Date.now() < deadline) {
         await new Promise((r) => setTimeout(r, RENDER_POLL_MS));
         const record = await libraryApi.curation(ref.itemId);
         latest = record.highlights.find((w) => w.index === ref.index) ?? latest;
       }
       if (latest.proxy !== 'ready') throw new Error(latest.proxy === 'failed' ? 'The clip failed to render' : 'Rendering is taking longer than expected — it will finish in the background');
       const v = latest.view?.version;
+      const panReady = waitPan && latest.panProxy === 'ready';
       onApplied({
         ...media,
-        url: mediaUrl.highlight(ref.itemId, ref.index, v),
+        url: panReady ? mediaUrl.highlightPan(ref.itemId, ref.index, v) : mediaUrl.highlight(ref.itemId, ref.index, v),
         thumbnailUrl: mediaUrl.highlightThumb(ref.itemId, ref.index, v),
         planetUrl: latest.planetProxy === 'ready' ? mediaUrl.highlightPlanet(ref.itemId, ref.index, v) : undefined,
         faces: [],
       });
       setInitial({ lens, yaw, pitch });
-      setStatus('Applied. The moment now looks this way in the project.');
+      setInitialRot(latest.planetRotationDeg ?? 0);
+      setPlanetRot(latest.planetRotationDeg ?? 0);
+      const path = latest.viewPath ?? [];
+      setWin({ sampleT: latest.sampleT, path, planet: latest.planetProxy });
+      setPanMode(path.length >= 2 ? 'pan' : 'static');
+      setStatus(
+        panReady
+          ? 'Applied. The pan now moves through your adjusted views.'
+          : keepPan && !panReady
+            ? 'Applied as a static view — the shifted pan no longer moved enough to keep.'
+            : 'Applied. The moment now looks this way in the project.',
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not apply the view');
       setStatus(null);
     } finally {
       setBusy(null);
     }
-  }, [ref, lens, yaw, pitch, media, onApplied]);
+  }, [ref, lens, yaw, pitch, hasPan, panMode, hasPlanet, planetRot, initialRot, media, onApplied]);
 
   if (!ref) return null;
 
@@ -133,20 +196,38 @@ export default function ReframePanel({ media, onApplied, onClose }: ReframePanel
       </div>
 
       <div className="grid gap-4 md:grid-cols-[1.6fr_1fr]">
-        <div className="relative rounded-lg overflow-hidden bg-black aspect-video">
-          {previewUrl && (
-            <img
-              src={previewUrl}
-              alt={`Preview at yaw ${yaw}°, pitch ${pitch}°, lens ${lens.toUpperCase()}`}
-              className="w-full h-full object-contain"
-              onLoad={() => setPreviewLoading(false)}
-              onError={() => {
-                setPreviewLoading(false);
-                setError('Preview could not be rendered');
-              }}
-            />
+        <div className="space-y-2 min-w-0">
+          <div className="relative rounded-lg overflow-hidden bg-black aspect-video">
+            {previewUrl && (
+              <img
+                src={previewUrl}
+                alt={`Preview at yaw ${yaw}°, pitch ${pitch}°, lens ${lens.toUpperCase()}`}
+                className="w-full h-full object-contain"
+                onLoad={() => setPreviewLoading(false)}
+                onError={() => {
+                  setPreviewLoading(false);
+                  setError('Preview could not be rendered');
+                }}
+              />
+            )}
+            {(previewLoading || !previewUrl) && <div className="absolute inset-0 skeleton opacity-60" aria-hidden="true" />}
+          </div>
+
+          {/* Phase 7: what the pan passes through (start / peak / end of the view path). */}
+          {hasPan && stripUrls && (
+            <div className="grid grid-cols-3 gap-2" role="group" aria-label="Pan preview: start, peak and end of the camera move">
+              {stripUrls.map((s) => (
+                <figure key={s.label} className="m-0">
+                  <div className="relative rounded-lg overflow-hidden bg-black aspect-video">
+                    <img src={s.url} alt={`${s.label} of the pan at ${s.t.toFixed(1)} s`} className="w-full h-full object-cover" loading="lazy" />
+                  </div>
+                  <figcaption className="mt-1 text-[10px] text-text-muted text-center">
+                    {s.label} · {s.t.toFixed(1)}s
+                  </figcaption>
+                </figure>
+              ))}
+            </div>
           )}
-          {(previewLoading || !previewUrl) && <div className="absolute inset-0 skeleton opacity-60" aria-hidden="true" />}
         </div>
 
         <div className="space-y-4">
@@ -201,6 +282,53 @@ export default function ReframePanel({ media, onApplied, onClose }: ReframePanel
             />
           </div>
 
+          {/* Phase 7: spin the tiny-planet render of this moment (±180°, 15° steps). */}
+          {hasPlanet && (
+            <div>
+              <label htmlFor="reframe-planet-rot" className="flex items-center justify-between text-xs text-text-muted">
+                <span>Planet spin</span>
+                <span className="font-mono text-text-secondary">{planetRot > 0 ? '+' : ''}{planetRot}°</span>
+              </label>
+              <input
+                id="reframe-planet-rot"
+                type="range"
+                min={-180}
+                max={180}
+                step={15}
+                value={planetRot}
+                onChange={(e) => setPlanetRot(Number(e.target.value))}
+                className="w-full accent-[#FFD700]"
+              />
+              <p className="text-[10px] text-text-muted">Rotates the tiny-planet clip only; the flat view above is not affected.</p>
+            </div>
+          )}
+
+          {/* Phase 7: this moment pans — keep the move (shifted by the adjustment) or hold a static view. */}
+          {hasPan && (
+            <fieldset className="space-y-1">
+              <legend className="text-xs text-text-muted">This moment pans</legend>
+              <div className="flex gap-1" role="radiogroup" aria-label="Pan behaviour on apply">
+                {([
+                  { mode: 'pan' as const, label: 'Keep the pan' },
+                  { mode: 'static' as const, label: 'Static view' },
+                ]).map(({ mode, label }) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    role="radio"
+                    aria-checked={panMode === mode}
+                    onClick={() => setPanMode(mode)}
+                    disabled={busy === 'apply'}
+                    className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${panMode === mode ? 'bg-accent-gold text-bg-main' : 'text-text-secondary hover:text-white bg-bg-input'}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] text-text-muted">Keep the pan moves the whole camera path by your adjustment; static holds exactly this view.</p>
+            </fieldset>
+          )}
+
           <div className="flex items-center gap-2 pt-1">
             <button
               type="button"
@@ -217,6 +345,8 @@ export default function ReframePanel({ media, onApplied, onClose }: ReframePanel
                 setLens(initial.lens);
                 setYaw(initial.yaw);
                 setPitch(initial.pitch);
+                setPanMode(hasPan ? 'pan' : 'static');
+                setPlanetRot(initialRot);
               }}
               disabled={!changed || busy === 'apply'}
               className="text-xs text-text-muted hover:text-white disabled:opacity-40"

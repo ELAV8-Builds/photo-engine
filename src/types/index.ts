@@ -79,6 +79,12 @@ export interface TemplateSlot {
   transitionOverlay?: TransitionOverlayConfig;
   /** How a 360 highlight is shown here (Phase 5). 'tiny-planet' uses the media's square planet clip when it has one. */
   reframe?: 'flat' | 'tiny-planet';
+  /**
+   * Phase 7: which base-template slot this expanded slot was cloned from
+   * (set by expandTemplateForMedia; absent on unexpanded templates). Text
+   * overrides are keyed by base slot index, so the render maps them through this.
+   */
+  baseIndex?: number;
 }
 
 /** Configuration for a transition overlay (VFX clip between shots) */

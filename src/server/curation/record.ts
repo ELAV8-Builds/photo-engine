@@ -5,7 +5,6 @@
  */
 
 import fsp from 'fs/promises';
-import path from 'path';
 import { assertServer, dataPath, fileExists, writeJsonAtomic } from '../runtime';
 import { highlightThumbPath } from '../media/thumbnails';
 import type { CurationRecord, CurationSummary, FrameGrade } from '@/types/library';
@@ -34,9 +33,20 @@ export function highlightPlanetPath(itemId: string, index: number): string {
   return dataPath('proxies', `${itemId}-hl-${index}-planet.mp4`);
 }
 
-/** Phase 5: cached yaw-editor preview frame; angles are rounded to whole degrees by the caller. */
-export function viewFramePath(itemId: string, index: number, lens: 'a' | 'b', yawDeg: number, pitchDeg: number): string {
-  return dataPath('thumbs', `${itemId}-hl-${index}-view-${lens}-${yawDeg}-${pitchDeg}.jpg`);
+/**
+ * Yaw-editor preview frames may be requested anywhere inside a window plus this
+ * margin (the same 0.5 s the highlight renders carry). The GC uses the same
+ * bound to decide whether a cached frame still belongs to a window.
+ */
+export const HIGHLIGHT_FRAME_MARGIN_SEC = 0.5;
+
+/**
+ * Phase 5: cached yaw-editor preview frame. Phase 7 names it by the frame's
+ * source time (0.1 s resolution) instead of the window index, so the cache
+ * stays valid across re-analysis; angles are whole degrees, rounded by the caller.
+ */
+export function viewFramePath(itemId: string, atSec: number, lens: 'a' | 'b', yawDeg: number, pitchDeg: number): string {
+  return dataPath('thumbs', `${itemId}-view-${atSec.toFixed(1)}-${lens}-${yawDeg}-${pitchDeg}.jpg`);
 }
 
 /** Remove every rendered artefact of one window (clip, pan, planet, thumb) so a new view re-renders cleanly. */
@@ -68,35 +78,18 @@ export async function saveCuration(record: CurationRecord): Promise<void> {
 const MAX_HIGHLIGHTS = 8;
 
 /**
- * Phase 6: drop every cached yaw-editor frame of an item. They are rendered at
- * a window's `sampleT` but named only by window index, so after a re-curation
- * they would preview the wrong moment.
- */
-export async function removeViewFrames(itemId: string): Promise<number> {
-  const dir = dataPath('thumbs');
-  let names: string[];
-  try {
-    names = await fsp.readdir(dir);
-  } catch {
-    return 0;
-  }
-  const prefix = `${itemId}-hl-`;
-  const mine = names.filter((n) => n.startsWith(prefix) && n.includes('-view-'));
-  await Promise.all(mine.map((n) => fsp.rm(path.join(dir, n), { force: true })));
-  return mine.length;
-}
-
-/**
  * Forget an item's curation entirely: record, partial grades, and every rendered
- * highlight clip/thumbnail/preview frame. A re-run chooses new windows under the
- * same filenames, so stale artefacts must not survive to be mistaken for finished
- * work. Remembered user views (`user-views.ts`) are deliberately kept.
+ * highlight clip/thumbnail. A re-run chooses new windows under the same
+ * filenames, so stale artefacts must not survive to be mistaken for finished
+ * work. Remembered user views (`user-views.ts`) are deliberately kept, and so
+ * are yaw-editor frames: Phase 7 names them by source time, so they stay
+ * correct for whatever windows a re-analysis picks (the GC reclaims frames no
+ * window covers any more).
  */
 export async function removeCuration(itemId: string): Promise<void> {
   await fsp.rm(curationPath(itemId), { force: true });
   await fsp.rm(curationPartialPath(itemId), { force: true });
   for (let n = 0; n < MAX_HIGHLIGHTS; n++) await removeHighlightArtifacts(itemId, n);
-  await removeViewFrames(itemId);
 }
 
 /** Grades keyed by sample time (string seconds) for one model. */

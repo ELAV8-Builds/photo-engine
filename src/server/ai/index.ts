@@ -39,22 +39,22 @@ export function readProviderChoice(req: Request): ProviderChoice {
   return { kind: 'gemini', key, model };
 }
 
-/** Provider for a concrete choice (key in hand). */
-export function createProvider(choice: ProviderChoice, localModel: string): VisionProvider {
+/** Provider for a concrete choice (key in hand). `threads` bounds local model CPU (Phase 7, §3.1). */
+export function createProvider(choice: ProviderChoice, localModel: string, threads?: number): VisionProvider {
   if (choice.kind === 'gemini') return new GeminiProvider({ key: choice.key, model: choice.model ?? DEFAULT_GEMINI_MODEL });
-  return createOllamaProvider(localModel);
+  return createOllamaProvider(localModel, threads);
 }
 
 /**
  * Provider for a background job that only knows the provider *kind*: gemini
  * jobs pull the key from the cloud session; when it has expired the job must
- * stay pending rather than fail.
+ * stay pending rather than fail. `threads` bounds local model CPU (Phase 7).
  */
-export function createProviderForKind(kind: ProviderKind | undefined, localModel: string): VisionProvider {
+export function createProviderForKind(kind: ProviderKind | undefined, localModel: string, threads?: number): VisionProvider {
   if (kind === 'gemini') {
     const session = getCloudSession();
     if (!session) throw new ProviderUnavailableError('Cloud session expired — open Settings to reconnect Gemini, then Analyse again');
     return new GeminiProvider({ key: session.key, model: session.model ?? DEFAULT_GEMINI_MODEL });
   }
-  return createOllamaProvider(localModel);
+  return createOllamaProvider(localModel, threads);
 }

@@ -225,7 +225,8 @@ async function handleCurate(job: JobInfo, ctx: JobContext): Promise<void> {
 
   let provider: VisionProvider;
   try {
-    provider = createProviderForKind(job.provider, settings.visionModel);
+    // The budget's thread count rides along on every model request (§3.1).
+    provider = createProviderForKind(job.provider, settings.visionModel, budget.threads);
   } catch (err) {
     // Cloud session gone: nothing to grade with; keep the whole batch pending.
     cancelWhere(sameBackend);
@@ -355,7 +356,7 @@ async function handleHighlights(job: JobInfo, ctx: JobContext): Promise<void> {
           tmpDir,
         });
       } else {
-        await renderTinyPlanetProxy(lrv!, tmp, { ...common, startSec: start, durationSec: duration });
+        await renderTinyPlanetProxy(lrv!, tmp, { ...common, startSec: start, durationSec: duration, rotationDeg: h.planetRotationDeg });
       }
       await fsp.rename(tmp, out);
       setState('ready');
@@ -392,7 +393,7 @@ async function handlePan360(job: JobInfo, ctx: JobContext): Promise<void> {
 
   let provider: VisionProvider;
   try {
-    provider = createProviderForKind(job.provider, settings.visionModel);
+    provider = createProviderForKind(job.provider, settings.visionModel, budget.threads);
     if ((job.provider ?? 'local') === 'local') {
       const health = await ollamaHealth();
       if (!health.running || !hasModel(health.models, settings.visionModel)) throw new OllamaUnavailableError('Ollama is not running (start Ollama, then Analyse again)');

@@ -105,8 +105,8 @@ export const libraryApi = {
   /** Forget the cloud key parked in server memory. */
   clearCloudSession: () => request<{ cleared: boolean }>('/api/system/session', { method: 'DELETE' }),
 
-  /** Phase 5: set a 360 highlight's view by hand; its clips re-render. */
-  setHighlightView: (itemId: string, index: number, view: { lens: 'a' | 'b'; yawDeg: number; pitchDeg: number }) =>
+  /** Phase 5: set a 360 highlight's view by hand; its clips re-render. Phase 7: keepPan shifts the existing pan path instead of collapsing it; planetRotationDeg spins the tiny planet. */
+  setHighlightView: (itemId: string, index: number, view: { lens: 'a' | 'b'; yawDeg: number; pitchDeg: number; keepPan?: boolean; planetRotationDeg?: number }) =>
     request<{ highlight: HighlightWindow }>(`/api/library/items/${encodeURIComponent(itemId)}/highlights/${index}/view`, {
       method: 'PUT',
       body: JSON.stringify(view),
@@ -135,8 +135,9 @@ export const mediaUrl = {
   /** Phase 5 */
   highlightPan: (id: string, n: number, v?: number) => `/api/media/${encodeURIComponent(id)}/highlight/${n}/pan/stream${v ? `?v=${v}` : ''}`,
   highlightPlanet: (id: string, n: number, v?: number) => `/api/media/${encodeURIComponent(id)}/highlight/${n}/planet/stream${v ? `?v=${v}` : ''}`,
-  highlightFrame: (id: string, n: number, lens: 'a' | 'b', yawDeg: number, pitchDeg: number) =>
-    `/api/media/${encodeURIComponent(id)}/highlight/${n}/frame?lens=${lens}&yaw=${Math.round(yawDeg)}&pitch=${Math.round(pitchDeg)}`,
+  /** Phase 7: `t` (seconds) previews a moment other than the window's peak — the pan strip's start/end. */
+  highlightFrame: (id: string, n: number, lens: 'a' | 'b', yawDeg: number, pitchDeg: number, t?: number) =>
+    `/api/media/${encodeURIComponent(id)}/highlight/${n}/frame?lens=${lens}&yaw=${Math.round(yawDeg)}&pitch=${Math.round(pitchDeg)}${t !== undefined ? `&t=${t.toFixed(1)}` : ''}`,
 };
 
 /** Project media id for a library item or one of its highlight windows. */

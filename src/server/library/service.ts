@@ -12,8 +12,10 @@ import { cancelWhere, enqueue, PRIORITY } from '../jobs/queue';
 import { registerAllHandlers } from '../jobs/handlers';
 import { startThermalWatchdog } from '../jobs/thermal';
 import { hasModel, ollamaHealth, OllamaUnavailableError } from '../ai/ollama';
-import { getSettings } from '../settings/store';
+import { budgetFor, getSettings } from '../settings/store';
 import { loadCuration, removeCuration, removeHighlightArtifacts, saveCuration } from '../curation/record';
+import { clampPath } from '../media/pan';
+import { panDecision, simplifyPath } from '../analysis/pan-plan';
 import { rememberUserView, rememberUserViewsFrom } from '../curation/user-views';
 import { selectForMontage, type SelectOptions } from '../curation/select';
 import { buildStoryContext, defaultKeys, type ContextSource } from '../story/context';
@@ -235,11 +237,17 @@ export async function getCurationRecord(itemId: string): Promise<CurationRecord 
  * Phase 5: a hand-chosen view for one 360 highlight. Rendered clips for that
  * window are dropped and queued again; the view becomes `source: 'user'` and
  * its version bumps so the browser re-fetches. Returns the updated window.
+ *
+ * Phase 7 (§3.3): when the window has a real pan and the caller asks to keep
+ * it, the whole keyframe path shifts by the same delta the user applied to the
+ * peak view (clamped to the lens limits). A shift that flattens the path below
+ * the pan threshold collapses to a static view, exactly like model planning.
  */
 export async function setHighlightView(
   itemId: string,
   index: number,
   view: { lens: 'a' | 'b'; yawDeg: number; pitchDeg: number },
+  opts: { keepPan?: boolean; planetRotationDeg?: number } = {},
 ): Promise<{ highlight: CurationRecord['highlights'][number] } | null> {
   await ensureBootstrapped();
   const item = await resolveItem(itemId);
@@ -249,19 +257,37 @@ export async function setHighlightView(
   if (!record || !h) return null;
 
   cancelWhere((j) => j.itemId === item.id && (j.type === 'highlights' || j.type === 'pan360'));
+  const previous = h.view;
   h.view = { ...view, source: 'user', version: (h.view?.version ?? 0) + 1 };
   await rememberUserView(item.id, { start: h.start, end: h.end, view: h.view });
-  // A hand-set view is static: no pan; the planet clip does not depend on the view.
-  h.viewPath = [{ t: h.start, yawDeg: view.yawDeg, pitchDeg: view.pitchDeg }];
-  h.panProxy = undefined;
+
+  const hadPan = !!h.viewPath && h.viewPath.length >= 2;
+  let kept = false;
+  if (opts.keepPan && hadPan) {
+    const dYaw = view.yawDeg - (previous?.yawDeg ?? 0);
+    const dPitch = view.pitchDeg - (previous?.pitchDeg ?? 0);
+    const shifted = simplifyPath(clampPath(h.viewPath!.map((k) => ({ t: k.t, yawDeg: k.yawDeg + dYaw, pitchDeg: k.pitchDeg + dPitch }))));
+    if (panDecision(shifted) === 'pan') {
+      h.viewPath = shifted;
+      h.panProxy = 'pending';
+      kept = true;
+    }
+  }
+  if (!kept) {
+    // A hand-set view without a pan is static; the planet clip does not depend on the view.
+    h.viewPath = [{ t: h.start, yawDeg: view.yawDeg, pitchDeg: view.pitchDeg }];
+    h.panProxy = undefined;
+  }
   h.proxy = 'pending';
+  // Phase 7 (§3.3): the planet's spin, validated and snapped to 15° by the route.
+  if (opts.planetRotationDeg !== undefined) h.planetRotationDeg = opts.planetRotationDeg === 0 ? undefined : opts.planetRotationDeg;
   await removeHighlightArtifacts(item.id, h.index);
   h.planetProxy = 'pending'; // removed with the other artefacts; cheap to redo from the .lrv
   await saveCuration(record);
 
   const patched = await patchItem(item.rootId, item.id, { status: { ...item.status, highlights: 'pending' } });
   if (patched) enqueueItemWork(patched);
-  log.info('highlight view set by user', { item: item.name, index, lens: view.lens, yaw: view.yawDeg, pitch: view.pitchDeg });
+  log.info('highlight view set by user', { item: item.name, index, lens: view.lens, yaw: view.yawDeg, pitch: view.pitchDeg, pan: kept ? 'kept' : 'static' });
   return { highlight: h };
 }
 
@@ -323,8 +349,9 @@ export async function planStory(opts: StoryOptions = {}): Promise<{ plan: StoryP
 
   const choice: ProviderChoice = opts.provider ?? { kind: 'local' };
   const modelReady = choice.kind === 'local' ? await visionModelReady() : true;
+  const settings = await getSettings();
   const plan = modelReady
-    ? await generateStoryPlan(ctx, { provider: createProvider(choice, (await getSettings()).visionModel) })
+    ? await generateStoryPlan(ctx, { provider: createProvider(choice, settings.visionModel, budgetFor(settings.performanceProfile).threads) })
     : heuristicStoryPlan(ctx);
   if (!modelReady) log.info('story: model unavailable, heuristic plan', { shots: ctx.entries.length });
   await saveStoryPlan(plan);

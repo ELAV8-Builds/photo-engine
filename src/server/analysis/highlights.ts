@@ -156,7 +156,15 @@ export function minGapSec(durationSec: number): number {
   return Math.max(20, 0.05 * durationSec);
 }
 
-/** Greedy temporal non-max suppression: best first, nothing within `minGap` of a pick. */
+/** Phase 7 (§3.2): a short clip's runner-up must score within 15% of the top to earn a second moment. */
+export const SECOND_MOMENT_SCORE_RATIO = 0.85;
+
+/**
+ * Greedy temporal non-max suppression: best first, nothing within `minGap` of a
+ * pick. Clips capped at one moment (under 225 s) may keep a second when another
+ * candidate at least the gap away scores within 15% of the top — a short clip
+ * with two genuinely strong beats deserves both (§3.2).
+ */
 export function selectPeaks(candidates: Candidate[], durationSec: number): Candidate[] {
   const cap = highlightCap(durationSec);
   const gap = minGapSec(durationSec);
@@ -165,6 +173,11 @@ export function selectPeaks(candidates: Candidate[], durationSec: number): Candi
   for (const c of sorted) {
     if (picked.length >= cap) break;
     if (picked.every((p) => Math.abs(p.t - c.t) >= gap)) picked.push(c);
+  }
+  if (cap === 1 && picked.length === 1) {
+    const top = picked[0];
+    const second = sorted.find((c) => c !== top && Math.abs(c.t - top.t) >= gap && c.score >= SECOND_MOMENT_SCORE_RATIO * top.score);
+    if (second) picked.push(second);
   }
   return picked;
 }

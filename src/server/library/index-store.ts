@@ -139,12 +139,25 @@ export async function findItem(itemId: string, rootIds: string[]): Promise<Index
   return undefined;
 }
 
+/**
+ * Phase 7: an item's error message describes a failure; once a step succeeds
+ * and no step is failed any more, the message must not linger. Returns what
+ * `error` should be after `status` replaced the previous step states.
+ */
+function settleError(previous: IndexedItem, status: ItemStatus, becameReady: boolean): string | undefined {
+  if (!becameReady) return previous.error;
+  return Object.values(status).some((s) => s === 'failed') ? previous.error : undefined;
+}
+
 /** Apply a partial update to one item and persist. No-op if the item vanished. */
 export async function patchItem(rootId: string, itemId: string, patch: Partial<IndexedItem>): Promise<IndexedItem | undefined> {
   const map = await ensureLoaded(rootId);
   const current = map.get(itemId);
   if (!current) return undefined;
-  const next: IndexedItem = { ...current, ...patch, status: { ...current.status, ...(patch.status ?? {}) } };
+  const status: ItemStatus = { ...current.status, ...(patch.status ?? {}) };
+  const becameReady = (Object.keys(patch.status ?? {}) as (keyof ItemStatus)[]).some((k) => patch.status![k] === 'ready' && current.status[k] !== 'ready');
+  const error = 'error' in patch ? patch.error : settleError(current, status, becameReady);
+  const next: IndexedItem = { ...current, ...patch, status, error };
   map.set(itemId, next);
   await persist(rootId);
   return next;
@@ -154,10 +167,11 @@ export async function setStep(rootId: string, itemId: string, step: keyof ItemSt
   const map = await ensureLoaded(rootId);
   const current = map.get(itemId);
   if (!current) return;
+  const status: ItemStatus = { ...current.status, [step]: value };
   map.set(itemId, {
     ...current,
-    status: { ...current.status, [step]: value },
-    error: value === 'failed' ? error ?? current.error : current.error,
+    status,
+    error: value === 'failed' ? error ?? current.error : settleError(current, status, value === 'ready'),
   });
   await persist(rootId);
 }

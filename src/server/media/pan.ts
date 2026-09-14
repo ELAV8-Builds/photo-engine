@@ -150,12 +150,15 @@ export interface RenderPlanetOptions extends Omit<FfmpegOptions, 'durationSec'> 
   hasAudio: boolean;
   size?: number;
   bitrate?: string;
+  /** Phase 7: spin the planet — yaw applied before the −90° pitch (v360 rorder ypr), ±180°. */
+  rotationDeg?: number;
 }
 
 /** Square stereographic "tiny planet" clip from the dual-fisheye .lrv. */
 export async function renderTinyPlanetProxy(lrvPath: string, outputPath: string, opts: RenderPlanetOptions): Promise<void> {
-  const { startSec, durationSec, hasAudio, size = 1080, bitrate = '10M', ...ffmpegOpts } = opts;
-  const filter = `v360=input=dfisheye:ih_fov=200:iv_fov=200:output=sg:h_fov=250:v_fov=250:w=${size}:h=${size}:pitch=-90`;
+  const { startSec, durationSec, hasAudio, size = 1080, bitrate = '10M', rotationDeg = 0, ...ffmpegOpts } = opts;
+  const rot = Math.max(-180, Math.min(180, Math.round(rotationDeg)));
+  const filter = `v360=input=dfisheye:ih_fov=200:iv_fov=200:output=sg:h_fov=250:v_fov=250:w=${size}:h=${size}:pitch=-90${rot !== 0 ? `:yaw=${rot}` : ''}`;
   const encoder =
     process.platform === 'darwin'
       ? ['-c:v', 'h264_videotoolbox', '-b:v', bitrate, '-maxrate', bitrate, '-bufsize', '10M', '-profile:v', 'high', '-allow_sw', '1']

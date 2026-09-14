@@ -78,6 +78,13 @@ const VIDEO_LOAD_TIMEOUT_MS = 20_000;
 /** A localhost Range seek completes in well under a second; anything past this is a stall, not a slow disk. */
 export const SEEK_TIMEOUT_MS = 10_000;
 
+/** Phase 7: how a cancelled export distinguishes itself from a real failure. */
+export function abortError(): Error {
+  const err = new Error('Export cancelled');
+  err.name = 'AbortError';
+  return err;
+}
+
 /**
  * Seek a video element to a specific time and wait for the frame to be available.
  * Returns a promise that resolves when the frame is ready to draw.
@@ -85,9 +92,14 @@ export const SEEK_TIMEOUT_MS = 10_000;
  * Phase 6: bounded. A seek whose `seeked` never fires (evicted element, dead
  * decoder, competing seeks) rejects after `timeoutMs` — as does a media error —
  * so an export fails visibly instead of hanging on one frame.
+ * Phase 7: an AbortSignal rejects the wait immediately (export Cancel).
  */
-export function seekToTime(video: HTMLVideoElement, time: number, timeoutMs = SEEK_TIMEOUT_MS): Promise<void> {
+export function seekToTime(video: HTMLVideoElement, time: number, timeoutMs = SEEK_TIMEOUT_MS, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(abortError());
+      return;
+    }
     // If we're already at this time (within a frame), resolve immediately
     if (Math.abs(video.currentTime - time) < 0.02) {
       resolve();
@@ -97,6 +109,7 @@ export function seekToTime(video: HTMLVideoElement, time: number, timeoutMs = SE
     const cleanup = () => {
       video.removeEventListener('seeked', onSeeked);
       video.removeEventListener('error', onError);
+      signal?.removeEventListener('abort', onAbort);
       clearTimeout(timer);
     };
 
@@ -110,6 +123,11 @@ export function seekToTime(video: HTMLVideoElement, time: number, timeoutMs = SE
       reject(new Error(`The video failed while seeking to ${time.toFixed(2)} s`));
     };
 
+    const onAbort = () => {
+      cleanup();
+      reject(abortError());
+    };
+
     const timer = setTimeout(() => {
       cleanup();
       reject(new Error(`No video frame arrived at ${time.toFixed(2)} s within ${Math.round(timeoutMs / 1000)} s — the browser stalled on this clip. Try the export again.`));
@@ -117,6 +135,7 @@ export function seekToTime(video: HTMLVideoElement, time: number, timeoutMs = SE
 
     video.addEventListener('seeked', onSeeked);
     video.addEventListener('error', onError);
+    signal?.addEventListener('abort', onAbort, { once: true });
     video.currentTime = time;
   });
 }

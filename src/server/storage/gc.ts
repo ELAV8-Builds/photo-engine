@@ -19,8 +19,8 @@ import { createLogger } from '../log';
 import { TEMP_WITH_PID } from '../maintenance';
 import { listRoots } from '../library/registry';
 import { getItemsForRoot } from '../library/index-store';
-import { loadCuration } from '../curation/record';
-import type { ArtifactClass, StorageClassReport, StorageReport, StoryPlan } from '@/types/library';
+import { HIGHLIGHT_FRAME_MARGIN_SEC, loadCuration } from '../curation/record';
+import type { ArtifactClass, CurationRecord, StorageClassReport, StorageReport, StoryPlan } from '@/types/library';
 
 assertServer();
 
@@ -34,6 +34,10 @@ const CACHE_DIRS: readonly DataSubdir[] = ['thumbs', 'renditions', 'proxies', 'a
 export type ArtifactRef =
   | { cls: ArtifactClass; owner: 'item'; itemId: string }
   | { cls: ArtifactClass; owner: 'highlight'; itemId: string; index: number }
+  /** Phase 7: yaw-editor frames are addressed by source time, not window index. */
+  | { cls: 'viewFrames'; owner: 'frame'; itemId: string; t: number }
+  /** A recognised legacy naming that nothing produces any more; always orphaned. */
+  | { cls: ArtifactClass; owner: 'obsolete'; itemId: string }
   | { cls: 'storyPlans'; owner: 'story'; hash: string };
 
 const ID = '([a-f0-9]{20})';
@@ -42,7 +46,10 @@ const ID = '([a-f0-9]{20})';
 const RULES: ReadonlyArray<{ dir: DataSubdir; re: RegExp; build: (m: RegExpExecArray) => ArtifactRef }> = [
   { dir: 'thumbs', re: new RegExp(`^${ID}\\.jpg$`), build: (m) => ({ cls: 'thumbnails', owner: 'item', itemId: m[1] }) },
   { dir: 'thumbs', re: new RegExp(`^${ID}-hl-(\\d+)\\.jpg$`), build: (m) => ({ cls: 'thumbnails', owner: 'highlight', itemId: m[1], index: Number(m[2]) }) },
-  { dir: 'thumbs', re: new RegExp(`^${ID}-hl-(\\d+)-view-[ab]--?\\d+--?\\d+\\.jpg$`), build: (m) => ({ cls: 'viewFrames', owner: 'highlight', itemId: m[1], index: Number(m[2]) }) },
+  // Phase 7 form: <id>-view-<t>-<lens>-<yaw>-<pitch>.jpg (t in seconds, one decimal).
+  { dir: 'thumbs', re: new RegExp(`^${ID}-view-(\\d+(?:\\.\\d)?)-[ab]--?\\d+--?\\d+\\.jpg$`), build: (m) => ({ cls: 'viewFrames', owner: 'frame', itemId: m[1], t: Number(m[2]) }) },
+  // Pre-Phase-7 form named by window index; nothing writes it any more, so it is always reclaimable.
+  { dir: 'thumbs', re: new RegExp(`^${ID}-hl-(\\d+)-view-[ab]--?\\d+--?\\d+\\.jpg$`), build: (m) => ({ cls: 'viewFrames', owner: 'obsolete', itemId: m[1] }) },
   { dir: 'renditions', re: new RegExp(`^${ID}-(?:1024|2048|4096)\\.jpg$`), build: (m) => ({ cls: 'renditions', owner: 'item', itemId: m[1] }) },
   { dir: 'proxies', re: new RegExp(`^${ID}-flat720\\.mp4$`), build: (m) => ({ cls: 'previews360', owner: 'item', itemId: m[1] }) },
   { dir: 'proxies', re: new RegExp(`^${ID}-hl-(\\d+)(?:-pan|-planet)?\\.mp4$`), build: (m) => ({ cls: 'highlightClips', owner: 'highlight', itemId: m[1], index: Number(m[2]) }) },
@@ -65,6 +72,8 @@ export interface KnownState {
   itemIds: ReadonlySet<string>;
   /** Highlight windows the item's record currently holds (0 without a record). */
   highlightCount(itemId: string): Promise<number>;
+  /** Start/end/peak of each window in the item's record (empty without a record). Phase 7. */
+  windowSpans(itemId: string): Promise<ReadonlyArray<{ start: number; end: number; sampleT: number }>>;
   /** Item ids a story plan names, or null when the plan file is unreadable. */
   storyItemIds(hash: string): Promise<string[] | null>;
 }
@@ -75,6 +84,19 @@ export async function isOrphan(ref: ArtifactRef, known: KnownState): Promise<boo
       return !known.itemIds.has(ref.itemId);
     case 'highlight':
       return !known.itemIds.has(ref.itemId) || ref.index >= (await known.highlightCount(ref.itemId));
+    case 'frame': {
+      // A time-addressed frame belongs to whichever window covers its time
+      // (± the same margin the frame route accepts) — or sits at a window's
+      // peak, which the editor renders by default even when refinement moved
+      // the window off the sampled second. No such window → orphan.
+      if (!known.itemIds.has(ref.itemId)) return true;
+      const spans = await known.windowSpans(ref.itemId);
+      return !spans.some(
+        (s) => (ref.t >= s.start - HIGHLIGHT_FRAME_MARGIN_SEC && ref.t <= s.end + HIGHLIGHT_FRAME_MARGIN_SEC) || Math.abs(ref.t - s.sampleT) < 0.05,
+      );
+    }
+    case 'obsolete':
+      return true;
     case 'story': {
       const ids = await known.storyItemIds(ref.hash);
       return ids === null || ids.some((id) => !known.itemIds.has(id));
@@ -130,16 +152,22 @@ export function buildReport(entries: readonly InventoryEntry[]): StorageReport {
 async function knownState(): Promise<KnownState> {
   const itemIds = new Set<string>();
   for (const root of await listRoots()) for (const item of await getItemsForRoot(root.id)) itemIds.add(item.id);
-  const counts = new Map<string, Promise<number>>();
+  const records = new Map<string, Promise<CurationRecord | null>>();
+  const recordFor = (itemId: string): Promise<CurationRecord | null> => {
+    let p = records.get(itemId);
+    if (!p) {
+      p = loadCuration(itemId);
+      records.set(itemId, p);
+    }
+    return p;
+  };
   return {
     itemIds,
     highlightCount(itemId) {
-      let p = counts.get(itemId);
-      if (!p) {
-        p = loadCuration(itemId).then((r) => r?.highlights.length ?? 0);
-        counts.set(itemId, p);
-      }
-      return p;
+      return recordFor(itemId).then((r) => r?.highlights.length ?? 0);
+    },
+    windowSpans(itemId) {
+      return recordFor(itemId).then((r) => (r ? r.highlights.map((h) => ({ start: h.start, end: h.end, sampleT: h.sampleT })) : []));
     },
     async storyItemIds(hash) {
       try {

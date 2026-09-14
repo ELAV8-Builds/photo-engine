@@ -86,6 +86,13 @@ export interface OllamaProviderOptions {
   model: string;
   baseUrl?: string;
   timeoutMs?: number;
+  /**
+   * Phase 7: CPU threads Ollama may use for this provider's requests, from the
+   * active ResourceBudget (quiet 2 / balanced 4 / fast 8). Sent per request as
+   * `options.num_thread` so the model lane honours the performance profile the
+   * way the ffmpeg lane already does. Undefined = Ollama's default.
+   */
+  threads?: number;
 }
 
 export class OllamaProvider implements VisionProvider {
@@ -93,11 +100,13 @@ export class OllamaProvider implements VisionProvider {
   readonly model: string;
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
+  private readonly threads?: number;
 
   constructor(opts: OllamaProviderOptions) {
     this.model = opts.model;
     this.baseUrl = opts.baseUrl ?? OLLAMA_BASE_URL;
     this.timeoutMs = opts.timeoutMs ?? REQUEST_TIMEOUT_MS;
+    this.threads = opts.threads;
   }
 
   async gradeFrame(jpeg: Buffer, ctx: InferenceContext = {}): Promise<FrameGrade> {
@@ -140,7 +149,7 @@ export class OllamaProvider implements VisionProvider {
       format: opts.json ? 'json' : undefined,
       think: false,
       keep_alive: KEEP_ALIVE,
-      options: { temperature: 0.1, num_predict: opts.numPredict },
+      options: { temperature: 0.1, num_predict: opts.numPredict, ...(this.threads !== undefined ? { num_thread: this.threads } : {}) },
       messages: [{ role: 'user', content, ...(opts.image ? { images: [opts.image] } : {}) }],
     };
 
@@ -184,6 +193,6 @@ function safeJson(text: string): unknown {
 }
 
 /** Provider for the configured vision model. Cheap to construct; holds no connection. */
-export function createOllamaProvider(model: string): OllamaProvider {
-  return new OllamaProvider({ model });
+export function createOllamaProvider(model: string, threads?: number): OllamaProvider {
+  return new OllamaProvider({ model, threads });
 }
