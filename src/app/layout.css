@@ -1,0 +1,38 @@
+/* ============================================
+   SHARED ROOT LAYOUT
+   Applies to every page via RootLayout.
+   - hex-pattern background (global)
+   - centered max-width column
+   - responsive padding
+   ============================================ */
+
+.layout-wrapper {
+  /* Reuse the global hex-grid so we do not duplicate data URIs.
+     The class is already defined in globals.css; we just apply it here
+     to ensure every page sees it even if tree-shaken elsewhere. */
+}
+
+.page-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.page-content {
+  width: 100%;
+  max-width: 1280px;
+  padding-inline: 1.5rem;          /* 24px on medium+, responsive */
+  padding-block-start: 2rem;       /* generous top gap */
+}
+
+@media (min-width: 640px) {
+  .page-content {
+    padding-inline: 2rem;
+  }
+}
+
+/* Ensure text inside shells uses the design-system color tokens */
+.page-shell a {
+  color: theme('colors.accent.gold');
+}
