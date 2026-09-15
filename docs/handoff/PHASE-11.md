@@ -139,8 +139,13 @@ not lost).
   fallbacks now `console.warn` (preview and export); preview stepping is event-gated (`gatedSeek`) —
   `video.seeking` is not a valid gate (it updates asynchronously, so rapid writes restart the seek
   forever and no frame is ever presented) and `play()`-driven preview was reverted (browsers throttle
-  decode of "invisible" videos: clock advances, frames don't). Debug hooks `window.__pfPreview`
-  (inspect/probe) and `window.__pfLastFrame` are deliberate keepers.
+  decode of "invisible" videos: clock advances, frames don't). 10.2c: browsers allow ~6 connections per
+  origin and every `<video preload=auto>` holds one while buffering — 15 whole clips loading at once
+  starved each other past seekToTime's 10 s bound and 6–7 slots fell to thumbnail stills (the owner's
+  "everything is fuzzy stills" report); the preview now runs a sliding window (active slot + 3 lookahead
+  hold live elements, wrap-aware; released elements drop their src to free the connection and revive via
+  `getVideoElement`). Verified: 15 whole-clip slots, all moving, zero fallbacks. Debug hooks
+  `window.__pfPreview` (inspect/probe) and `window.__pfLastFrame` are deliberate keepers.
 
 ## 3. Phase 11 scope — full-quality whole-clip playback, animated splits, gated verifications
 

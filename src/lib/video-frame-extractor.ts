@@ -79,6 +79,10 @@ export function getVideoElement(media: MediaFile): Promise<HTMLVideoElement> {
       } else {
         video.src = media.url;
       }
+    } else if (!video.getAttribute('src')) {
+      // Released by the preview's sliding window (src removed to free its
+      // connection/decoder) — re-attach the source to revive it.
+      video.src = media.file ? URL.createObjectURL(media.file) : media.url;
     }
     // A cached element whose buffered data the browser has evicted (detached
     // elements in a long-lived tab) sits at readyState < 2 and never fires

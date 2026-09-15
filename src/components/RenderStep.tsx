@@ -238,6 +238,34 @@ export default function RenderStep(props: RenderStepProps) {
           setPreviewSlotIndex(frame.slotIndex);
         }
 
+        // Sliding window (10.2c): keep the active slot and the next LOOKAHEAD
+        // loaded (wrap-aware), release everything else so its connection and
+        // decoder free up for the slots that actually need them next.
+        const slotCount = slotConfigs.length;
+        for (let k = 0; k <= LOOKAHEAD; k++) loadSlot((frame.slotIndex + k) % slotCount);
+        if (frame.inTransition) loadSlot(frame.transitionDstSlot);
+        const keep = new Set<number>([frame.transitionDstSlot]);
+        for (let k = -1; k <= LOOKAHEAD; k++) keep.add((((frame.slotIndex + k) % slotCount) + slotCount) % slotCount);
+        const keepSrc = new Set<string>();
+        keep.forEach((s) => {
+          const m = mediaForSlot(mediaByIdRef.current.get(slotAssignments[s] || ''), template.slots[s]);
+          if (m) keepSrc.add(m.url);
+        });
+        loadedSlots.forEach((s) => {
+          if (keep.has(s)) return;
+          const src = imageMap.get(s);
+          imageMap.delete(s);
+          loadedSlots.delete(s);
+          if (src instanceof HTMLVideoElement) {
+            const at = src.getAttribute('src') || '';
+            if (!keepSrc.has(at)) {
+              src.pause();
+              src.removeAttribute('src');
+              src.load();
+            }
+          }
+        });
+
         // Phase 10.2 (owner directive): the active slot's video advances at 1× —
         // never sped up, never slowed, never frozen. Each slot owns its own
         // window of the source (fitSlotsToFootage) and the *clock* drives the
@@ -404,8 +432,47 @@ export default function RenderStep(props: RenderStepProps) {
       },
     };
 
-    // Load images (and video elements for video-type media)
-    template.slots.forEach((slot, i) => {
+    // Videos load through a small gate, first slots first: many clips loading
+    // and seeking at once starved each other past seekToTime's 10 s bound and
+    // slots silently became thumbnail stills (measured 10.2b). Three at a time
+    // keeps the next slots ready before the preview reaches them.
+    let gateActive = 0;
+    const gateQueue: Array<() => void> = [];
+    const throughGate = async <T,>(work: () => Promise<T>): Promise<T> => {
+      if (gateActive >= 3) await new Promise<void>((r) => gateQueue.push(r));
+      gateActive++;
+      try {
+        return await work();
+      } finally {
+        gateActive--;
+        gateQueue.shift()?.();
+      }
+    };
+
+    // Sliding window (10.2c): only the active slot plus the next few hold live
+    // media. Browsers allow ~6 connections per origin and every
+    // <video preload=auto> holds one while buffering — 15+ whole clips at once
+    // exhausted the pool, so later loads stalled past the 10 s bound and fell
+    // back to stills (measured live at the owner's project size).
+    const LOOKAHEAD = 3;
+    const loadedSlots = new Set<number>();
+    const loadingSlots = new Set<number>();
+
+    const markDone = (i: number) => {
+      loadingSlots.delete(i);
+      loadedSlots.add(i);
+      imagesLoaded++;
+      if (imagesLoaded >= 1 && !cleanupAnim) {
+        cleanupAnim = tryStartAnimation();
+      }
+    };
+
+    // Load one slot's media (image, video at its window start, or split composite)
+    const loadSlot = (i: number) => {
+      if (loadedSlots.has(i) || loadingSlots.has(i)) return;
+      const slot = template.slots[i];
+      if (!slot) return;
+      loadingSlots.add(i);
       const layout = slot.layout ?? 'single';
 
       // Split-screen layouts: composite multiple *photos* into one canvas. The
@@ -419,21 +486,15 @@ export default function RenderStep(props: RenderStepProps) {
           .filter((m): m is MediaFile => !!m);
 
         if (slotMedia.length === 0) {
-          imagesLoaded++;
+          markDone(i);
           return;
         }
 
         loadSplitScreenComposite(slotMedia, layout, w, h).then((composite) => {
           imageMap.set(i, composite);
-          imagesLoaded++;
-          if (imagesLoaded >= 1 && !cleanupAnim) {
-            cleanupAnim = tryStartAnimation();
-          }
+          markDone(i);
         }).catch(() => {
-          imagesLoaded++;
-          if (imagesLoaded >= 1 && !cleanupAnim) {
-            cleanupAnim = tryStartAnimation();
-          }
+          markDone(i);
         });
         return;
       }
@@ -442,23 +503,20 @@ export default function RenderStep(props: RenderStepProps) {
       const mid = slotAssignments[i] || '';
       const media = mediaForSlot(mediaById.get(mid), slot);
       if (!media) {
-        imagesLoaded++;
+        markDone(i);
         return;
       }
 
       if (media.type === 'video') {
-        // Load real video element for video-type media
-        getVideoElement(media).then((video) => {
+        // Load real video element for video-type media (gated, see above)
+        throughGate(() => getVideoElement(media).then((video) => {
           // Seek to this slot's own window start (returned so a bounded-seek rejection reaches the fallback below)
           const startTime = slotWindows?.get(i)?.start ?? media.trimStart ?? 0;
           return seekToTime(video, startTime).then(() => {
             imageMap.set(i, video);
-            imagesLoaded++;
-            if (imagesLoaded >= 1 && !cleanupAnim) {
-              cleanupAnim = tryStartAnimation();
-            }
+            markDone(i);
           });
-        }).catch((err) => {
+        })).catch((err) => {
           // Fallback: try loading as image (thumbnail). Loud — a slot showing a
           // still instead of its video must be traceable (owner directive).
           console.warn(`[Preview] slot ${i + 1} falls back to a still: video failed for ${media.name}:`, err);
@@ -466,16 +524,10 @@ export default function RenderStep(props: RenderStepProps) {
           img.crossOrigin = 'anonymous';
           img.onload = () => {
             imageMap.set(i, img);
-            imagesLoaded++;
-            if (imagesLoaded >= 1 && !cleanupAnim) {
-              cleanupAnim = tryStartAnimation();
-            }
+            markDone(i);
           };
           img.onerror = () => {
-            imagesLoaded++;
-            if (imagesLoaded >= 1 && !cleanupAnim) {
-              cleanupAnim = tryStartAnimation();
-            }
+            markDone(i);
           };
           img.src = media.thumbnailUrl || media.url;
         });
@@ -486,10 +538,7 @@ export default function RenderStep(props: RenderStepProps) {
       const cached = previewImagesRef.current.get(media.url);
       if (cached && cached.complete) {
         imageMap.set(i, cached);
-        imagesLoaded++;
-        if (imagesLoaded >= 1 && !cleanupAnim) {
-          cleanupAnim = tryStartAnimation();
-        }
+        markDone(i);
         return;
       }
 
@@ -498,19 +547,16 @@ export default function RenderStep(props: RenderStepProps) {
       img.onload = () => {
         previewImagesRef.current.set(media.url, img);
         imageMap.set(i, img);
-        imagesLoaded++;
-        if (imagesLoaded >= 1 && !cleanupAnim) {
-          cleanupAnim = tryStartAnimation();
-        }
+        markDone(i);
       };
       img.onerror = () => {
-        imagesLoaded++;
-        if (imagesLoaded >= 1 && !cleanupAnim) {
-          cleanupAnim = tryStartAnimation();
-        }
+        markDone(i);
       };
       img.src = media.url;
-    });
+    };
+
+    // Prime the window: the first slot and its lookahead.
+    for (let k = 0; k < Math.min(LOOKAHEAD + 1, template.slots.length); k++) loadSlot(k);
 
     return () => {
       if (cleanupAnim) cleanupAnim();
