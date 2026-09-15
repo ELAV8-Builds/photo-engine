@@ -333,10 +333,13 @@ export default function RenderStep(props: RenderStepProps) {
     template.slots.forEach((slot, i) => {
       const layout = slot.layout ?? 'single';
 
-      // Split-screen layouts: composite multiple images into one canvas
-      if (layout !== 'single') {
-        const slotMediaIds = getSlotMediaIds(i, template, slotAssignments, mediaIds);
-        const slotMedia = slotMediaIds
+      // Split-screen layouts: composite multiple *photos* into one canvas. The
+      // composite is drawn once, so a video tile would freeze on its first
+      // frame; with fewer than two photos the split falls through to the
+      // single path below, where videos actually play.
+      const splitIds = layout !== 'single' ? getSlotMediaIds(i, template, slotAssignments, mediaIds, mediaKinds) : [];
+      if (layout !== 'single' && splitIds.length >= 2) {
+        const slotMedia = splitIds
           .map(id => mediaById.get(id))
           .filter((m): m is MediaFile => !!m);
 
@@ -595,12 +598,13 @@ export default function RenderStep(props: RenderStepProps) {
         }));
 
         const slotLayout = slot.layout ?? 'single';
+        // Photos-only split tiles; fewer than two photos demotes the slot to single so videos play (see preview).
+        const splitIds = slotLayout !== 'single' ? getSlotMediaIds(i, template, slotAssignments, mediaIds, mediaKinds) : [];
 
         try {
-          if (slotLayout !== 'single') {
-            // Split-screen slot: composite multiple images, render through engine
-            const slotMediaIds = getSlotMediaIds(i, template, slotAssignments, mediaIds);
-            const slotMedia = slotMediaIds
+          if (slotLayout !== 'single' && splitIds.length >= 2) {
+            // Split-screen slot: composite multiple photos, render through engine
+            const slotMedia = splitIds
               .map(id => mediaById.get(id))
               .filter((m): m is MediaFile => !!m);
 
@@ -843,7 +847,7 @@ export default function RenderStep(props: RenderStepProps) {
     } finally {
       if (exportAbortRef.current === controller) exportAbortRef.current = null;
     }
-  }, [template, slotAssignments, selectedMedia, mediaById, aspectRatio, outputQuality, music, textOverrides, mixerOverrides, musicTracks, onExportComplete]);
+  }, [template, slotAssignments, selectedMedia, mediaById, mediaKinds, aspectRatio, outputQuality, music, textOverrides, mixerOverrides, musicTracks, onExportComplete]);
 
   /** Phase 7: stop the export. During encoding the WASM worker must be killed. */
   const cancelExport = useCallback(() => {

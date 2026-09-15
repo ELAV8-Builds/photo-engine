@@ -244,6 +244,12 @@ async function handleCurate(job: JobInfo, ctx: JobContext): Promise<void> {
     } else {
       const track = await loadSignals(item.id);
       if (!track) throw new Error('Stage-1 signals are missing; rerun the scan');
+      // Phase 10: the fast profile trades coverage for model time — Stage-1
+      // triage caps graded samples, view-picking runs only for the strongest
+      // 4 windows, and long clips reuse near-duplicate grades more eagerly.
+      // quiet/balanced stay exhaustive (and byte-reproducible with the pinned
+      // seed against the Phase-9 baselines).
+      const fast = settings.performanceProfile === 'fast';
       record = await curateVideo(item, track, {
         provider,
         tmpDir,
@@ -251,6 +257,9 @@ async function handleCurate(job: JobInfo, ctx: JobContext): Promise<void> {
         nice: budget.nice,
         threads: budget.threads,
         onProgress: ctx.report,
+        sampleBudget: fast ? 96 : undefined,
+        maxViewPicks: fast ? 4 : undefined,
+        dedupHamming: fast && track.durationSec > 600 ? 8 : undefined,
       });
       // Phase 9 (§3.1): the record being replaced is still on disk (the force
       // path only removes artefacts); windows that survived the re-analysis

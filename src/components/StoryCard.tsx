@@ -20,9 +20,11 @@ interface StoryCardProps {
   applied: boolean;
   onGenerate: (force: boolean) => void;
   onApply: () => void;
+  /** Phase 10: title/chapters onto the *current* template, keeping its choice and the shot order. */
+  onApplyText?: () => void;
 }
 
-export default function StoryCard({ plan, busy, error, available, applied, onGenerate, onApply }: StoryCardProps) {
+export default function StoryCard({ plan, busy, error, available, applied, onGenerate, onApply, onApplyText }: StoryCardProps) {
   const recommended = plan ? SMART_TEMPLATES.find((t) => t.style === plan.templateStyle) : null;
 
   return (
@@ -51,6 +53,17 @@ export default function StoryCard({ plan, busy, error, available, applied, onGen
           >
             {busy ? 'Writing…' : plan ? 'Regenerate' : 'Write story'}
           </button>
+          {plan && onApplyText && !applied && (
+            <button
+              type="button"
+              onClick={onApplyText}
+              disabled={busy}
+              className="btn-outline !py-1.5 !px-4 !rounded-full text-xs disabled:opacity-40"
+              title="Put the title and chapters on the template you chose — no template switch, no reordering"
+            >
+              Apply text only
+            </button>
+          )}
           {plan && (
             <button
               type="button"

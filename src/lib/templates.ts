@@ -1310,7 +1310,8 @@ export function assignMediaToSlots(
   for (const i of order) {
     const slot = template.slots[i];
     if (pool.length === 0) pool = [...mediaIds]; // wrap: repeat media when slots outnumber it
-    const wanted = slot.reframe === 'tiny-planet' ? 'video' : slot.slotType;
+    // Split-screen slots want photos: their composite is drawn once, so a video tile would freeze.
+    const wanted = slot.reframe === 'tiny-planet' ? 'video' : (slot.mediaCount ?? 1) > 1 ? 'photo' : slot.slotType;
     assigned[i] =
       (wanted === 'photo' || wanted === 'video' ? takeFrom((m) => kinds.get(m) === wanted) : undefined) ??
       takeFrom(() => true)!;
@@ -1324,12 +1325,18 @@ export function assignMediaToSlots(
  *
  * The approach: a multi-photo slot (e.g., 4-grid) uses the primary assignment plus
  * the next N-1 media from the pool, cycling through available media.
+ *
+ * When `kinds` is given, split tiles are filled from photos only: the composite
+ * is drawn once per slot, so a video in a tile would freeze on its first frame.
+ * Fewer than two photos means the split cannot happen — the caller gets a
+ * single id back and renders the slot as `single` (videos then actually play).
  */
 export function getSlotMediaIds(
   slotIndex: number,
   template: SmartTemplate,
   slotAssignments: string[],
   allMediaIds: string[],
+  kinds?: ReadonlyMap<string, 'photo' | 'video'>,
 ): string[] {
   const slot = template.slots[slotIndex];
   const mediaCount = slot.mediaCount ?? 1;
@@ -1339,16 +1346,36 @@ export function getSlotMediaIds(
     return [primaryId];
   }
 
-  // For multi-photo layouts, pick sequential media starting from the primary assignment
-  const primaryIndex = allMediaIds.indexOf(primaryId);
+  const pool = kinds ? allMediaIds.filter((id) => kinds.get(id) === 'photo') : allMediaIds;
+  if (kinds && pool.length < 2) return [primaryId];
+
+  // Pick sequential media starting from the primary assignment (when it is in the pool)
+  const primaryIndex = pool.indexOf(primaryId);
   const ids: string[] = [];
   for (let i = 0; i < mediaCount; i++) {
     const idx = primaryIndex >= 0
-      ? (primaryIndex + i) % allMediaIds.length
-      : i % allMediaIds.length;
-    ids.push(allMediaIds[idx]);
+      ? (primaryIndex + i) % pool.length
+      : i % pool.length;
+    ids.push(pool[idx]);
   }
   return ids;
+}
+
+/**
+ * Phase 10: what the exported MP4 will actually last — the sum of slot
+ * durations **plus** each inter-slot transition (the export appends them,
+ * using the *destination* slot's transitionDuration — see
+ * renderTransitionFramesToFFmpeg) **plus** the fade-out after the last slot.
+ * Every consumer of `totalDuration` (Timeline card, preview loop, the music
+ * mix length, saved projects) shares this one definition so the label, the
+ * preview and the MP4 agree. Slots without media skip their transition at
+ * export time, so a partially-filled timeline runs slightly shorter than this.
+ */
+export function renderedDurationSec(slots: ReadonlyArray<Pick<TemplateSlot, 'duration' | 'transitionDuration'>>, fadeOutDuration?: number): number {
+  const slotsSum = slots.reduce((sum, s) => sum + s.duration, 0);
+  let transitions = 0;
+  for (let i = 1; i < slots.length; i++) transitions += slots[i].transitionDuration ?? 0.4;
+  return Math.round((slotsSum + transitions + (fadeOutDuration ?? 0)) * 10) / 10;
 }
 
 /**
@@ -1359,8 +1386,9 @@ export function getSlotMediaIds(
  * create enough slots for ALL media. The template's visual style,
  * transitions, effects, and theme are preserved.
  *
- * If mediaCount <= template.slots.length, returns the original template
- * (unless `roles` asks for shaping, see below).
+ * If mediaCount <= template.slots.length, returns the template with only its
+ * `totalDuration` corrected to the rendered length (unless `roles` asks for
+ * shaping, see below).
  * If targetDuration is provided, adjusts per-slot durations to hit that target.
  *
  * `roles` (Phase 3 story layer) is one entry per slot: `breather` slots hold
@@ -1373,7 +1401,10 @@ export function expandTemplateForMedia(
   targetDuration?: number,
   roles?: ReadonlyArray<ShotRole>,
 ): SmartTemplate {
-  if (mediaCount <= template.slots.length) return roles ? applyShotRoles(template, roles) : template;
+  if (mediaCount <= template.slots.length) {
+    const sized = { ...template, totalDuration: renderedDurationSec(template.slots, template.fadeOutDuration) };
+    return roles ? applyShotRoles(sized, roles) : sized;
+  }
 
   const baseSlots = template.slots;
   const baseCount = baseSlots.length;
@@ -1463,10 +1494,11 @@ export function expandTemplateForMedia(
     expandedSlots.push(clonedSlot);
   }
 
-  // Calculate new total duration
-  let newTotalDuration: number;
+  // Fit slot durations to a target (e.g. song length). The rendered video
+  // still appends transitions and the fade, so with music it now runs a touch
+  // past the song into silence — before Phase 10 the audio mix was rendered to
+  // the *shorter* slot sum and `-shortest` cut the final slots off the MP4.
   if (targetDuration && targetDuration > 0) {
-    // Fit to target duration (e.g., song length)
     const perSlotDuration = targetDuration / mediaCount;
     const minDuration = 1.5; // Never go below 1.5s per slot
     const effectiveDuration = Math.max(perSlotDuration, minDuration);
@@ -1474,10 +1506,6 @@ export function expandTemplateForMedia(
     for (const slot of expandedSlots) {
       slot.duration = Math.round(effectiveDuration * 10) / 10;
     }
-    newTotalDuration = expandedSlots.reduce((sum, s) => sum + s.duration, 0);
-  } else {
-    // Use the average duration from the base template
-    newTotalDuration = expandedSlots.reduce((sum, s) => sum + s.duration, 0);
   }
 
   // A tiny-planet reframe on the template's closing slot is about *closing*, so it
@@ -1489,13 +1517,13 @@ export function expandTemplateForMedia(
     expandedSlots[expandedSlots.length - 1] = { ...last, reframe: 'tiny-planet', holdPoint: 'center', layout: 'single', mediaCount: 1 };
   }
 
+  const fadeOut = template.fadeOutDuration ?? 0.8; // default fade unless the template sets its own
   const expanded: SmartTemplate = {
     ...template,
     slots: expandedSlots,
     mediaCount,
-    totalDuration: Math.round(newTotalDuration * 10) / 10,
-    // Default fade-out of 0.8s unless template explicitly sets it
-    fadeOutDuration: template.fadeOutDuration ?? 0.8,
+    totalDuration: renderedDurationSec(expandedSlots, fadeOut),
+    fadeOutDuration: fadeOut,
   };
   return roles ? applyShotRoles(expanded, roles) : expanded;
 }
@@ -1562,7 +1590,7 @@ export function applyShotRoles(
   return {
     ...template,
     slots,
-    totalDuration: Math.round(slots.reduce((sum, s) => sum + s.duration, 0) * 10) / 10,
+    totalDuration: renderedDurationSec(slots, template.fadeOutDuration),
   };
 }
 
@@ -1591,12 +1619,10 @@ export function applyBeatSync(
     transitionOverlay: slot.transitionOverlay ? { ...slot.transitionOverlay } : undefined,
   }));
 
-  const newTotalDuration = syncedSlots.reduce((sum, s) => sum + s.duration, 0);
-
   return {
     ...template,
     slots: syncedSlots,
-    totalDuration: Math.round(newTotalDuration * 100) / 100,
+    totalDuration: renderedDurationSec(syncedSlots, template.fadeOutDuration),
   };
 }
 

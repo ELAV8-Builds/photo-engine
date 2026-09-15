@@ -466,6 +466,16 @@ export default function MediaStep({ media, onMediaChange, onNext, suggestedPickC
                   </span>
                 )}
 
+                {/* Phase 10: a saved moment whose clip was re-analysed away — it can't stream any more. */}
+                {item.staleReference && (
+                  <span
+                    className="absolute top-1 left-1 right-1 bg-red-500/90 text-white text-[8px] font-bold px-1.5 py-0.5 rounded text-center"
+                    title="This saved moment no longer exists in the clip's analysis. Remove it, or re-add the clip's current moments from the library."
+                  >
+                    MOMENT MISSING
+                  </span>
+                )}
+
                 {/* Insta360 container badge */}
                 {insta360Label(item.name) && (
                   <span className="absolute top-1 left-1 bg-black/75 text-accent-gold text-[8px] font-bold px-1.5 py-0.5 rounded">

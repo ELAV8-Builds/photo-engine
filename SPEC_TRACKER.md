@@ -63,6 +63,17 @@
 | L9.3 | Reproducible grading: `temperature: 0` + `seed: 42` on gradeFrame only | ✅ DONE | Measured: unpinned varied per call (quality dark↔ok flip = the 0.42↔0.6 drift mechanism); pinned byte-identical 3/3 per frame and across request order; 3 pinned forced re-analyses → identical records; whole card 2,674 s / 174 jobs / 0 failed / 42/42 therm clean / llama mean 0.60 p95 1.24 peak 1.33 cores; second-moment table: 23 cap-1 seconds, min 0.55, floor intact |
 | L9.4 | Verify Gemini / real `.insp` / Photos library | ⚠️ STILL OWNER-GATED | No key pasted, no Full Disk Access granted, no real `.insp` on the card during Phase 9 |
 
+## Library & Local AI Curation — Phase 10 ✅ COMPLETE (owner-directed scope; see docs/handoff/PHASE-11.md)
+| # | Feature | Status | Notes |
+|---|---------|--------|-------|
+| L10.1 | Timeline integrity: label = preview = MP4 (and the music mix no longer truncates the ending) | ✅ DONE | `renderedDurationSec` (slots + destination transitions + fade) used by expansion/roles/beat-sync; engine transitions moved to appended windows matching the export; 8-slot label "37s" = measured 37.2 s export; correction: Phase-9's "10s vs 82.6s" claim was mostly a QA regex artifact (`formatDuration` renders "1m 10s") — the real bug was the slot-sum label + `-shortest` music truncation |
+| L10.2 | Videos never freeze in split-screen slots | ✅ DONE | photos-first primaries (`assignMediaToSlots`), photos-only tiles (`getSlotMediaIds` + kinds), <2 photos demotes to single in preview & export; end-to-end export byte-matched controls (1,116 frames) |
+| L10.3 | AI text default-on: story auto-writes on the Template step + "Apply text only" | ✅ DONE | cached per shot list; heuristic fallback; verified live ("Echoes of Stone and Sky" auto-appeared; text-only kept template + order) |
+| L10.4 | Fast-profile grading for long clips (triage 96 samples, top-4 view picks, dedup 8 >10 min) | ✅ DONE | balanced/quiet byte-identical (regression-verified); 30-min clip 226.8→174.8 s (grades 70→32; residual = ffmpeg sampling pass); honest boundary: no effect under ~8 min (250 s clip unchanged) |
+| L10.5 | Header fits at 768 px; stale moment references badge ("MOMENT MISSING") | ✅ DONE / ⚠️ badge not live-verified | `lg:` label reveal; QA clean at 375/768/1280; badge code path exists but no stale reference exists in real data |
+| L10.6 | Location-aware stories (GPS → places) | ⏸ DEFERRED with evidence | zero GPS tags on all current media (.insv + photos); revisit once the Photos library is readable |
+| L10.7 | INSV-quality whole-clip segments; animated split tiles | ⏸ DEFERRED with design | churn-safe render-at-export design written up (PHASE-11 §3.1/§3.2) — flagged as the one machine-load risk, per owner's ask |
+
 ## Phase 1 — Fix Fundamentals ✅ COMPLETE
 | # | Feature | Status | Notes |
 |---|---------|--------|-------|

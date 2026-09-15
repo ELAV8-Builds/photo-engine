@@ -25,6 +25,8 @@ export interface MediaFile {
   capturedAt?: number;
   /** 360 highlight only (Phase 5): square tiny-planet clip, used by slots with `reframe: 'tiny-planet'`. */
   planetUrl?: string;
+  /** Phase 10: a saved moment whose window no longer exists in the clip's record — its clip URL 404s. */
+  staleReference?: boolean;
 }
 
 export type PhotoFile = MediaFile;

@@ -111,6 +111,39 @@ export function planSampleTimes(track: SignalTrack): number[] {
   return times;
 }
 
+/**
+ * Phase 10 (fast profile): keep only the most promising sample times when a
+ * budget applies. Stage 1 already measured every second for free, so the
+ * prior is technical quality plus motion, with audio events and novelty as
+ * bonuses — the times dropped are exactly the ones Stage 1 finds boring. One
+ * time per 60 s stretch survives regardless (a quiet but gorgeous moment must
+ * stay visible to the model), so the result can exceed the budget on very
+ * long clips. Deterministic: ties break to the earlier time.
+ */
+export function triageSampleTimes(track: SignalTrack, times: number[], budget: number): number[] {
+  if (times.length <= budget) return times;
+  const motion = perSecondMotionScore(track);
+  const prior = (t: number): number => {
+    const s = Math.min(track.perSecond.usable.length - 1, Math.max(0, Math.floor(t)));
+    return (track.perSecond.technical[s] ?? 0) + 0.5 * (motion[s] ?? 0) + (track.perSecond.audioEvent[s] ? 0.4 : 0) + (track.perSecond.novelty[s] ? 0.4 : 0);
+  };
+  const ranked = [...times].sort((a, b) => prior(b) - prior(a) || a - b);
+
+  const COVERAGE_SEC = 60;
+  const chosen = new Set<number>();
+  const binBest = new Map<number, number>();
+  for (const t of ranked) {
+    const bin = Math.floor(t / COVERAGE_SEC);
+    if (!binBest.has(bin)) binBest.set(bin, t);
+  }
+  binBest.forEach((t) => chosen.add(t));
+  for (const t of ranked) {
+    if (chosen.size >= Math.max(budget, binBest.size)) break;
+    chosen.add(t);
+  }
+  return times.filter((t) => chosen.has(t));
+}
+
 // ---------------------------------------------------------------------------
 // Pure: fusion + selection
 // ---------------------------------------------------------------------------
@@ -258,6 +291,12 @@ export interface CurateOptions extends FfmpegOptions {
   tmpDir: string;
   signal: AbortSignal;
   onProgress?: (fraction: number) => void;
+  /** Phase 10 (fast profile): grade at most this many sampled frames, chosen by Stage-1 promise (`triageSampleTimes`). Default: full coverage. */
+  sampleBudget?: number;
+  /** Phase 10 (fast profile): model-pick views only for the strongest N peaks; later windows reuse the nearest picked view. Default: every window. */
+  maxViewPicks?: number;
+  /** Phase 10 (fast profile): looser near-duplicate reuse for long clips. Default `CURATION.dedupHamming`. */
+  dedupHamming?: number;
 }
 
 function checkAborted(signal: AbortSignal): void {
@@ -285,9 +324,10 @@ export async function curatePhoto(item: IndexedItem, thumbPath: string, opts: Cu
 }
 
 export async function curateVideo(item: IndexedItem, track: SignalTrack, opts: CurateOptions): Promise<CurationRecord> {
-  const { provider, tmpDir, signal, onProgress, ...ffmpegOpts } = opts;
+  const { provider, tmpDir, signal, onProgress, sampleBudget, maxViewPicks, dedupHamming, ...ffmpegOpts } = opts;
   const started = Date.now();
   const durationSec = track.durationSec;
+  const dedupMax = dedupHamming ?? CURATION.dedupHamming;
 
   const useCameraProxy = item.layout === 'dual-fisheye-streams' && !!item.cameraProxyAbsPath;
   const input = useCameraProxy ? item.cameraProxyAbsPath! : item.absPath;
@@ -295,7 +335,8 @@ export async function curateVideo(item: IndexedItem, track: SignalTrack, opts: C
   const is360 = layout === 'dual-fisheye-sbs' || layout === 'dual-fisheye-streams';
 
   // 1. Sample frames + hashes in one ffmpeg pass.
-  const times = planSampleTimes(track);
+  let times = planSampleTimes(track);
+  if (sampleBudget !== undefined && sampleBudget > 0) times = triageSampleTimes(track, times, sampleBudget);
   const extraction = await extractSampleFrames(input, { ...ffmpegOpts, signal, layout, durationSec, outDir: path.join(tmpDir, 'samples') });
   const hashes: FrameHash[] = hashesFromRaw(extraction.hashRaw);
   checkAborted(signal);
@@ -317,7 +358,7 @@ export async function curateVideo(item: IndexedItem, track: SignalTrack, opts: C
     const hash = hashes[k];
 
     let grade: FrameGrade | undefined = partial.grades[String(t)];
-    if (!grade && prev && hammingDistance(prev.hash, hash) <= CURATION.dedupHamming) {
+    if (!grade && prev && hammingDistance(prev.hash, hash) <= dedupMax) {
       grade = prev.grade;
       reused += 1;
     }
@@ -369,10 +410,22 @@ export async function curateVideo(item: IndexedItem, track: SignalTrack, opts: C
     let view: HighlightView | undefined;
     let faces = peak.grade.faces;
     if (is360) {
-      const chosen = await pickView(input, layout as 'dual-fisheye-sbs' | 'dual-fisheye-streams', peak, { ...ffmpegOpts, signal, provider, tmpDir });
-      view = chosen.view;
-      faces = faces || chosen.grade.faces;
-      graded += chosen.graded;
+      // Phase 10 (fast profile): `peaks` is best-first, so only the strongest
+      // `maxViewPicks` windows pay for model view-picking; the rest reuse the
+      // nearest picked view (usually the same scene). Measured on the 30-min
+      // clip, view candidates were ~2/3 of its fresh model calls.
+      if (maxViewPicks === undefined || i < Math.max(1, maxViewPicks)) {
+        const chosen = await pickView(input, layout as 'dual-fisheye-sbs' | 'dual-fisheye-streams', peak, { ...ffmpegOpts, signal, provider, tmpDir });
+        view = chosen.view;
+        faces = faces || chosen.grade.faces;
+        graded += chosen.graded;
+      } else {
+        const nearest = highlights.reduce<HighlightWindow | null>(
+          (best, h) => (h.view && (!best || Math.abs(h.sampleT - peak.t) < Math.abs(best.sampleT - peak.t)) ? h : best),
+          null,
+        );
+        view = nearest?.view ? { lens: nearest.view.lens, yawDeg: nearest.view.yawDeg, pitchDeg: nearest.view.pitchDeg } : { lens: 'a', yawDeg: 0, pitchDeg: 0 };
+      }
     }
 
     highlights.push({

@@ -18,6 +18,8 @@ export interface StoryControls {
   applied: boolean;
   onGenerate: (force: boolean) => void;
   onApply: () => void;
+  /** Phase 10: put the plan's writing on the current template without switching it or reordering shots. Absent = no template chosen yet. */
+  onApplyText?: () => void;
 }
 
 interface TemplateStepProps {
@@ -975,6 +977,7 @@ export default function TemplateStep({
           applied={story.applied}
           onGenerate={story.onGenerate}
           onApply={story.onApply}
+          onApplyText={story.onApplyText}
         />
       )}
 

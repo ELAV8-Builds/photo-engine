@@ -424,7 +424,8 @@ function restoreSavedMoment(
 ): MediaFile {
   const win = source?.record.highlights.find((h) => h.index === index);
   if (!source || !win) {
-    return { ...common, url: mediaUrl.highlight(saved.libraryItemId!, index), libraryItemId: saved.libraryItemId, is360: true, capturedAt: saved.capturedAt };
+    // Phase 10: flagged so the editor can say "this moment no longer exists" instead of a silent 404.
+    return { ...common, url: mediaUrl.highlight(saved.libraryItemId!, index), libraryItemId: saved.libraryItemId, is360: true, capturedAt: saved.capturedAt, staleReference: true };
   }
   const pick: MontagePick = {
     itemId: source.item.id,

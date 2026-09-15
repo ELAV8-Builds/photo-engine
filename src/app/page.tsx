@@ -80,10 +80,30 @@ function HomeContent() {
     setStoryApplied(true);
   }, [storyPlan, media, selectedTemplate]);
 
+  /** Phase 10: the plan's writing on the *current* template — no template switch, no reorder. */
+  const applyStoryText = useCallback(() => {
+    if (!storyPlan || !selectedTemplate) return;
+    const base = SMART_TEMPLATES.find((t) => t.id === selectedTemplate);
+    if (!base) return;
+    const expanded = expandTemplateForMedia(base, media.filter((m) => m.selected).length);
+    setTextOverrides(buildStoryTextOverrides(expanded, storyPlan, media, base));
+  }, [storyPlan, selectedTemplate, media]);
+
   // Applying is a snapshot; editing the shot list afterwards means the story no longer matches.
   useEffect(() => {
     if (storyPlan && storyApplied && storyKeys.join('|') !== storyPlan.keys.join('|')) setStoryApplied(false);
   }, [storyKeys, storyPlan, storyApplied]);
+
+  // Phase 10: the story is the default text layer, not a hidden button — write it
+  // as soon as the Template step opens with library-backed shots. Plans are
+  // cached per shot list on the server, so this costs one model pass per
+  // selection ever (heuristic fallback when the model is down). A failure does
+  // not retry on its own; Regenerate does.
+  useEffect(() => {
+    const planMatches = storyPlan && storyPlan.keys.join('|') === storyKeys.join('|');
+    if (step === 'template' && storyKeys.length > 0 && !planMatches && !storyBusy && !storyError) generateStory(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, storyKeys.join('|'), storyPlan, storyBusy, storyError]);
 
   // Load project from URL query param
   useEffect(() => {
@@ -231,6 +251,7 @@ function HomeContent() {
               applied: storyApplied,
               onGenerate: generateStory,
               onApply: applyStory,
+              onApplyText: selectedTemplate ? applyStoryText : undefined,
             }}
           />
         )}

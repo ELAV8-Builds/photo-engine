@@ -104,22 +104,6 @@ export class EffectsEngine {
     for (let i = 0; i < slots.length; i++) {
       const slot = slots[i];
       const slotEnd = accumulated + slot.duration;
-      const transDur = slot.transitionDuration ?? defaultTransDur;
-
-      // Check if we're in the transition zone at the end of this slot
-      const transStart = slotEnd - transDur;
-      if (globalTime >= transStart && globalTime < slotEnd && i < slots.length - 1) {
-        const transProgress = (globalTime - transStart) / transDur;
-        return {
-          globalTime,
-          slotIndex: i,
-          slotProgress: (globalTime - accumulated) / slot.duration,
-          inTransition: true,
-          transitionProgress: transProgress,
-          transitionSrcSlot: i,
-          transitionDstSlot: i + 1,
-        };
-      }
 
       if (globalTime < slotEnd) {
         return {
@@ -133,7 +117,29 @@ export class EffectsEngine {
         };
       }
 
-      accumulated = slotEnd;
+      // Phase 10: transitions occupy their own window *after* the slot, exactly
+      // as the export renders them (extra frames, timed by the destination
+      // slot's transitionDuration). They used to overlap the slot's tail here,
+      // which made the preview timeline shorter than the exported MP4 — and the
+      // music mix, rendered to that shorter number, truncated the export.
+      if (i < slots.length - 1) {
+        const transDur = slots[i + 1].transitionDuration ?? defaultTransDur;
+        const transEnd = slotEnd + transDur;
+        if (globalTime < transEnd) {
+          return {
+            globalTime,
+            slotIndex: i,
+            slotProgress: 1,
+            inTransition: true,
+            transitionProgress: (globalTime - slotEnd) / transDur,
+            transitionSrcSlot: i,
+            transitionDstSlot: i + 1,
+          };
+        }
+        accumulated = transEnd;
+      } else {
+        accumulated = slotEnd;
+      }
     }
 
     // Past the end — return last slot at progress 1
