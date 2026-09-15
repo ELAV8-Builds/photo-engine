@@ -249,12 +249,20 @@ export default function RenderStep(props: RenderStepProps) {
           const holding = slotDur !== undefined && slotDur > footage && progress * slotDur >= footage;
           if (holding) {
             if (!source.paused) source.pause();
-            if (Math.abs(source.currentTime - target) > 0.1) source.currentTime = target;
+            if (!source.seeking && Math.abs(source.currentTime - target) > 0.1) source.currentTime = target;
             return;
           }
-          const rate = slotDur !== undefined && slotDur < footage && slotDur > 0 ? Math.min(4, footage / slotDur) : 1;
-          if (Math.abs(source.playbackRate - rate) > 0.01) source.playbackRate = rate;
-          if (Math.abs(source.currentTime - target) > 0.35) source.currentTime = target;
+          const ratio = slotDur !== undefined && slotDur < footage && slotDur > 0 ? footage / slotDur : 1;
+          if (ratio > 4) {
+            // A whole clip in a short slot runs faster than any real playbackRate.
+            // Step-seek with one seek in flight — chasing the clock with per-frame
+            // seeks (the pre-10.1 behaviour) outran the decoder and froze the picture.
+            if (!source.paused) source.pause();
+            if (!source.seeking && Math.abs(source.currentTime - target) > 0.2) source.currentTime = target;
+            return;
+          }
+          if (Math.abs(source.playbackRate - ratio) > 0.01) source.playbackRate = ratio;
+          if (!source.seeking && Math.abs(source.currentTime - target) > 0.35) source.currentTime = target;
           if (source.paused) source.play().catch(() => { /* autoplay refusal: the resync seek above keeps frames roughly right */ });
         };
 
@@ -264,7 +272,7 @@ export default function RenderStep(props: RenderStepProps) {
           const mid = slotAssignments[frame.transitionDstSlot] || '';
           const media = mediaByIdRef.current.get(mid);
           const source = imageMap.get(frame.transitionDstSlot);
-          if (media?.type === 'video' && source instanceof HTMLVideoElement) {
+          if (media?.type === 'video' && source instanceof HTMLVideoElement && !source.seeking) {
             const t0 = getVideoTime(0, media);
             if (Math.abs(source.currentTime - t0) > 0.05) source.currentTime = t0;
           }
