@@ -230,44 +230,53 @@ export default function RenderStep(props: RenderStepProps) {
         const globalTime = elapsed % totalDuration; // Loop
 
         const frame = engine.calculateFrame(globalTime, slotConfigs);
+        // Debug hook: the frame the engine is rendering right now (ids only).
+        (window as unknown as Record<string, unknown>).__pfLastFrame = frame;
 
         // Update slot index for UI indicators
         if (frame.slotIndex !== previewSlotIndex) {
           setPreviewSlotIndex(frame.slotIndex);
         }
 
-        // Phase 10.2 (owner directive): the active slot's video *plays* at 1× —
+        // Phase 10.2 (owner directive): the active slot's video advances at 1× —
         // never sped up, never slowed, never frozen. Each slot owns its own
-        // window of the source (fitSlotsToFootage), sized to the slot, so real
-        // playback and the timeline clock advance together; drift beyond
-        // 0.35 s (loop wrap, slot re-entry) resyncs with one seek in flight.
+        // window of the source (fitSlotsToFootage) and the *clock* drives the
+        // frame via gated seeks, the primitive the export uses. Two dead ends,
+        // measured live and worth remembering: play() froze because browsers
+        // throttle decode of "invisible" videos, and `video.seeking`-guarded
+        // stepping froze because that flag updates asynchronously — rapid
+        // currentTime writes kept restarting the seek so no frame was ever
+        // presented. gatedSeek waits for the real `seeked` event instead.
         const driveActiveVideo = (slotIdx: number, progress: number) => {
           const mid = slotAssignments[slotIdx] || '';
           const media = mediaByIdRef.current.get(mid);
           const source = imageMap.get(slotIdx);
           if (media?.type !== 'video' || !(source instanceof HTMLVideoElement)) {
-            if (activeVideo) { activeVideo.pause(); activeVideo = null; }
+            activeVideo = null;
             return;
           }
-          if (activeVideo && activeVideo !== source) activeVideo.pause();
+          if (!source.paused) source.pause(); // seeks own the frame; playback must not fight them
           activeVideo = source;
           const slotDur = slotConfigs[slotIdx]?.duration;
           const win = slotWindows?.get(slotIdx);
           const target = getVideoTime(progress, media, slotDur, win?.start);
-          if (source.playbackRate !== 1) source.playbackRate = 1; // shared elements may carry old rates
-          if (!source.seeking && Math.abs(source.currentTime - target) > 0.35) source.currentTime = target;
-          if (source.paused) source.play().catch(() => { /* autoplay refusal: the resync seek above keeps frames roughly right */ });
+          if (Math.abs(source.currentTime - target) > 0.07) gatedSeek(source, target);
         };
 
         driveActiveVideo(frame.slotIndex, frame.slotProgress);
-        if (frame.inTransition) {
-          // The incoming slot shows its opening moments; park it at its window start.
-          const mid = slotAssignments[frame.transitionDstSlot] || '';
+
+        // Park the *next* slot's video at its own window start for the whole
+        // current slot, not just during the transition — a cold mid-file seek
+        // needs a second or two to fetch and decode, and paying that while the
+        // slot is already on screen looks like a frozen still (Phase 10.2).
+        const nextSlot = frame.inTransition ? frame.transitionDstSlot : frame.slotIndex + 1;
+        if (nextSlot < slotConfigs.length) {
+          const mid = slotAssignments[nextSlot] || '';
           const media = mediaByIdRef.current.get(mid);
-          const source = imageMap.get(frame.transitionDstSlot);
-          if (media?.type === 'video' && source instanceof HTMLVideoElement && !source.seeking) {
-            const t0 = slotWindows?.get(frame.transitionDstSlot)?.start ?? getVideoTime(0, media);
-            if (Math.abs(source.currentTime - t0) > 0.05) source.currentTime = t0;
+          const source = imageMap.get(nextSlot);
+          if (media?.type === 'video' && source instanceof HTMLVideoElement && source !== activeVideo) {
+            const t0 = slotWindows?.get(nextSlot)?.start ?? getVideoTime(0, media);
+            if (Math.abs(source.currentTime - t0) > 0.05) gatedSeek(source, t0);
           }
         }
 
@@ -358,6 +367,43 @@ export default function RenderStep(props: RenderStepProps) {
       }
     }
 
+    // Debug hook (ids and element states only): lets a bug report answer
+    // "what is this slot actually drawing" without guessing. Fail loud, stay
+    // inspectable.
+    (window as unknown as Record<string, unknown>).__pfPreview = {
+      inspect: () =>
+        template.slots.map((slot, i) => {
+          const src = imageMap.get(i);
+          return {
+            slot: i + 1,
+            media: (slotAssignments[i] || '').slice(0, 24),
+            window: slotWindows?.get(i),
+            source: src instanceof HTMLVideoElement ? `video@${Math.round(src.currentTime * 10) / 10}${src.paused ? ' paused' : ' playing'}` : src ? src.constructor.name : 'MISSING',
+          };
+        }),
+      /** Draw slot i's source twice, `gapMs` apart, and report how many pixels changed. */
+      probe: async (i: number, gapMs = 600) => {
+        const src = imageMap.get(i);
+        if (!(src instanceof HTMLVideoElement)) return { error: 'not a video' };
+        const scratch = document.createElement('canvas');
+        scratch.width = 160;
+        scratch.height = 90;
+        const sctx = scratch.getContext('2d')!;
+        const grabPixels = () => {
+          sctx.drawImage(src, 0, 0, 160, 90);
+          return sctx.getImageData(0, 0, 160, 90).data;
+        };
+        const t1 = src.currentTime;
+        const a = grabPixels();
+        await new Promise((r) => setTimeout(r, gapMs));
+        const t2 = src.currentTime;
+        const b = grabPixels();
+        let changed = 0;
+        for (let k = 0; k < a.length; k += 16) if (Math.abs(a[k] - b[k]) > 12) changed++;
+        return { t1: Math.round(t1 * 100) / 100, t2: Math.round(t2 * 100) / 100, changedPct: Math.round((changed / (a.length / 16)) * 1000) / 10 };
+      },
+    };
+
     // Load images (and video elements for video-type media)
     template.slots.forEach((slot, i) => {
       const layout = slot.layout ?? 'single';
@@ -412,8 +458,10 @@ export default function RenderStep(props: RenderStepProps) {
               cleanupAnim = tryStartAnimation();
             }
           });
-        }).catch(() => {
-          // Fallback: try loading as image (thumbnail)
+        }).catch((err) => {
+          // Fallback: try loading as image (thumbnail). Loud — a slot showing a
+          // still instead of its video must be traceable (owner directive).
+          console.warn(`[Preview] slot ${i + 1} falls back to a still: video failed for ${media.name}:`, err);
           const img = new Image();
           img.crossOrigin = 'anonymous';
           img.onload = () => {
@@ -1380,6 +1428,28 @@ function getResolution(aspect: string, quality: string): { width: number; height
 }
 
 // ====================================================================
+//  Gated seeks (Phase 10.2): at most one in-flight seek per element,
+//  cleared by the real `seeked` event. `video.seeking` is not a valid
+//  gate — it updates asynchronously, so rapid currentTime writes restart
+//  the seek forever and the element never presents a frame (measured).
+// ====================================================================
+
+const seekInFlight = new WeakMap<HTMLVideoElement, boolean>();
+const seekGateWired = new WeakSet<HTMLVideoElement>();
+
+function gatedSeek(video: HTMLVideoElement, time: number): void {
+  if (seekInFlight.get(video)) return;
+  if (!seekGateWired.has(video)) {
+    seekGateWired.add(video);
+    const clear = () => seekInFlight.set(video, false);
+    video.addEventListener('seeked', clear);
+    video.addEventListener('error', clear);
+  }
+  seekInFlight.set(video, true);
+  video.currentTime = time;
+}
+
+// ====================================================================
 //  Load an image from a MediaFile (using thumbnailUrl for videos)
 // ====================================================================
 
@@ -1403,7 +1473,9 @@ function loadMediaImage(media: MediaFile, signal?: AbortSignal, startSec?: numbe
     }).catch((err) => {
       // A cancel must not fall back to a thumbnail — it must stop the export.
       if (err instanceof Error && err.name === 'AbortError') throw err;
-      // Fallback to thumbnail image if video loading fails
+      // Fallback to thumbnail image if video loading fails. Loud (owner directive):
+      // a video rendering as a still must never happen silently.
+      console.warn(`[Export] ${media.name} falls back to its thumbnail still — video failed:`, err);
       return new Promise<HTMLImageElement>((resolve, reject) => {
         const img = new Image();
         img.crossOrigin = 'anonymous';

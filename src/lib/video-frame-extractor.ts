@@ -14,10 +14,19 @@ import type { MediaFile } from '@/types';
 
 // Cache of video elements keyed by media URL — reuse across renders
 const videoCache = new Map<string, HTMLVideoElement>();
+// Phase 10.2: in-flight loads, so concurrent callers share ONE element. The
+// old cache filled only after `loadeddata`, so a preview mounting 30 slots at
+// once created a duplicate decoder per slot (measured: 4 elements per URL) and
+// different slots ended up driving different duplicates of the same clip.
+const videoLoading = new Map<string, Promise<HTMLVideoElement>>();
 
 /**
  * Create or retrieve a cached HTMLVideoElement for a given media file.
- * The video is preloaded and ready for seeking.
+ * The video is preloaded and ready for seeking. Elements stay detached —
+ * browsers throttle the *decode* of videos they consider invisible, and a
+ * 2×2 px on-page holder (tried in Phase 10.2) made Chromium advance the clock
+ * without presenting frames. The preview's frame watchdog (RenderStep) covers
+ * the cases where a detached playing video starves anyway.
  */
 export function getVideoElement(media: MediaFile): Promise<HTMLVideoElement> {
   const key = media.url;
@@ -26,7 +35,11 @@ export function getVideoElement(media: MediaFile): Promise<HTMLVideoElement> {
     return Promise.resolve(cached);
   }
 
-  return new Promise((resolve, reject) => {
+  // Concurrent callers (a preview mounting every slot at once) share one load.
+  const inFlight = videoLoading.get(key);
+  if (inFlight) return inFlight;
+
+  const loading = new Promise<HTMLVideoElement>((resolve, reject) => {
     const video = cached || document.createElement('video');
     video.crossOrigin = 'anonymous';
     video.preload = 'auto';
@@ -72,6 +85,9 @@ export function getVideoElement(media: MediaFile): Promise<HTMLVideoElement> {
     // `loadeddata` on its own — restart the fetch so it does.
     video.load();
   });
+  videoLoading.set(key, loading);
+  loading.finally(() => videoLoading.delete(key)).catch(() => { /* surfaced to each caller */ });
+  return loading;
 }
 
 const VIDEO_LOAD_TIMEOUT_MS = 20_000;

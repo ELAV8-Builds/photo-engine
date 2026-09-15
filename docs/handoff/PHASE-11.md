@@ -131,12 +131,32 @@ not lost).
 - **`removeCuration` uncalled** (since Phase 9); delete only with approval.
 - Unstabilised source tilt (gyro horizon-levelling — large feature). `.cursor/` untracked; left as found.
 - The preview's slot-position indicator appears to skip "1/N" at the loop wrap (cosmetic; found while
-  verifying 10.2 — playback itself wraps correctly).
+  verifying 10.2 — playback itself wraps correctly; cause: the update-on-change comparison closes over
+  the mount-time state).
+- **Preview video engineering notes (10.2 post-ship, all measured live).** Real bugs found and fixed:
+  `getVideoElement` cached only after `loadeddata`, so a preview mounting many slots created a duplicate
+  decoder per slot (4 per URL measured) — now an in-flight-promise cache; silent video→thumbnail
+  fallbacks now `console.warn` (preview and export); preview stepping is event-gated (`gatedSeek`) —
+  `video.seeking` is not a valid gate (it updates asynchronously, so rapid writes restart the seek
+  forever and no frame is ever presented) and `play()`-driven preview was reverted (browsers throttle
+  decode of "invisible" videos: clock advances, frames don't). Debug hooks `window.__pfPreview`
+  (inspect/probe) and `window.__pfLastFrame` are deliberate keepers.
 
 ## 3. Phase 11 scope — full-quality whole-clip playback, animated splits, gated verifications
 
 Goal: finish the two deferred quality items the owner already asked for, and close whatever
 owner-gated verifications become available.
+
+### 3.0 Signal-aware windows for whole clips (owner's "quality first", found 2026-09-15)
+- `fitSlotsToFootage` spreads a whole clip's windows evenly across the file — which lands windows in
+  dark/static stretches (measured: a window at 19.5–24.5 s of VID_…001 is near-black footage; hours were
+  spent proving the *player* innocent). The server already knows the good seconds: curated highlight
+  windows and Stage-1 per-second technical quality.
+- Fix: when a whole video is in a project, snap its slot windows to its own curated highlight spans
+  first (fetch the record like `loadProject` already does), then fill remaining appearances from
+  technically-usable stretches; never place a window in seconds Stage 1 marks unusable.
+- Definition of done: the VID_…001 repro (4 whole clips, Cinematic Journey) shows no near-black window;
+  windows land on curated moments, verified by decoded frames.
 
 ### 3.1 INSV-quality segments for whole-clip project items (the churn-safe design above)
 - New `segment` job on the ffmpeg lane + artifact `proxies/<id>-seg-<t0>-<t1>.mp4` (+ GC rule + route).
