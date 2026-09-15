@@ -163,15 +163,24 @@ export function drawVideoFrame(
 /**
  * Get the effective time within a video, respecting trimStart/trimEnd.
  *
+ * Phase 10.1: when the slot outlasts the trimmed footage, the video plays at
+ * natural speed and holds its final frame — proportional mapping used to
+ * stretch a 5 s moment across a 20 s slot as quarter-speed slow motion. A slot
+ * *shorter* than the footage keeps the proportional (faster-than-life) cut.
+ *
  * @param progress - Normalized progress (0-1) within the template slot
  * @param media - The media file with optional trim properties
+ * @param slotDurationSec - The slot's length; enables the play-then-hold rule
  * @returns The absolute time in the video to seek to
  */
-export function getVideoTime(progress: number, media: MediaFile): number {
+export function getVideoTime(progress: number, media: MediaFile, slotDurationSec?: number): number {
   const start = media.trimStart ?? 0;
   const end = media.trimEnd ?? (media.duration ?? 0);
-  const duration = end - start;
-  return start + progress * duration;
+  const footage = end - start;
+  if (slotDurationSec !== undefined && slotDurationSec > footage) {
+    return start + Math.min(progress * slotDurationSec, footage);
+  }
+  return start + progress * footage;
 }
 
 /**

@@ -146,9 +146,14 @@ export function quantizeSlotsToBeat(
 
   for (let s = 0; s < slotCount; s++) {
     if (s === slotCount - 1) {
-      // Last slot gets the remainder
+      // Last slot takes the remainder, capped at 1.5× the median of the other
+      // slots — dumping the whole tail here produced a 41 s frozen finale
+      // (Phase 10.1). The montage simply ends before the song does; durations
+      // are honest since Phase 10, so the audio is trimmed to the video.
       const remaining = totalDuration - currentStart;
-      durations.push(Math.max(remaining, minSlotDuration));
+      const sorted = [...durations].sort((a, b) => a - b);
+      const median = sorted.length > 0 ? sorted[Math.floor(sorted.length / 2)] : remaining;
+      durations.push(Math.max(minSlotDuration, Math.min(remaining, Math.round(median * 1.5 * 10) / 10)));
     } else {
       // Find the beat that's beatsPerSlot away from our start
       const targetBeatIdx = Math.min((s + 1) * beatsPerSlot, beats.length - 1);

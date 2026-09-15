@@ -1395,6 +1395,14 @@ export function renderedDurationSec(slots: ReadonlyArray<Pick<TemplateSlot, 'dur
  * a little longer, `opener`/`closer` keep the hero speed ramps and become
  * kind-agnostic so the story's chosen shot always lands there.
  */
+/**
+ * Phase 10.1: fitting a song must never stretch slots into 20-second holds
+ * (photos froze, 5 s moments became quarter-speed). Slots are capped at this
+ * length; a long song gets *more slots* instead, cycling the media (the
+ * assignment already wraps). Beat sync then re-cuts the durations onto beats.
+ */
+const FIT_MAX_SLOT_SEC = 8;
+
 export function expandTemplateForMedia(
   template: SmartTemplate,
   mediaCount: number,
@@ -1409,9 +1417,12 @@ export function expandTemplateForMedia(
   const baseSlots = template.slots;
   const baseCount = baseSlots.length;
   const expandedSlots: TemplateSlot[] = [];
+  // Enough slots that none has to exceed the cap; media cycles into the extras
+  // (roles beyond the media list default to 'beat' in applyShotRoles).
+  const slotCount = targetDuration && targetDuration > 0 ? Math.max(mediaCount, Math.ceil(targetDuration / FIT_MAX_SLOT_SEC)) : mediaCount;
 
   // Cycle through the base slots to fill all media
-  for (let i = 0; i < mediaCount; i++) {
+  for (let i = 0; i < slotCount; i++) {
     const sourceSlot = baseSlots[i % baseCount];
     const clonedSlot: TemplateSlot = {
       ...sourceSlot,
@@ -1474,7 +1485,7 @@ export function expandTemplateForMedia(
       if (i === 0) {
         clonedSlot.speedPreset = 'dramatic';
       }
-      if (i === mediaCount - 1) {
+      if (i === slotCount - 1) {
         clonedSlot.speedPreset = 'decelerate';
       }
     }
@@ -1499,9 +1510,9 @@ export function expandTemplateForMedia(
   // past the song into silence — before Phase 10 the audio mix was rendered to
   // the *shorter* slot sum and `-shortest` cut the final slots off the MP4.
   if (targetDuration && targetDuration > 0) {
-    const perSlotDuration = targetDuration / mediaCount;
+    const perSlotDuration = targetDuration / slotCount;
     const minDuration = 1.5; // Never go below 1.5s per slot
-    const effectiveDuration = Math.max(perSlotDuration, minDuration);
+    const effectiveDuration = Math.min(FIT_MAX_SLOT_SEC, Math.max(perSlotDuration, minDuration));
 
     for (const slot of expandedSlots) {
       slot.duration = Math.round(effectiveDuration * 10) / 10;
