@@ -20,6 +20,11 @@ deliver. When Phase 11 is done, write `docs/handoff/PHASE-12.md` in this same fo
 - **Best practices:** typed boundaries, small pure functions, atomic writes, spawn with arg arrays (never
   shell strings), validate every request input, id-addressed media (the browser never sees filesystem
   paths), localhost-only APIs (middleware matcher), structured logging with redaction.
+- **Video plays at 1× or not at all (owner directive, 2026-09-15).** Never speed up, never slow down,
+  never show a frozen frame of a video during motion. Every video slot owns its own real-time window of
+  its source (`fitSlotsToFootage` in templates.ts): a 20-minute clip fills a 4-minute song as many
+  distinct 1× pieces spread across the file; when footage runs short, slots shrink and the montage (and
+  its music) simply ends earlier. Quality of imagery beats timeline length, always.
 
 ## 1. Product context
 
@@ -125,6 +130,8 @@ not lost).
 - **Retired-index reuse** (Phase 9 residual) and **record tombstones** — still needs a schema decision.
 - **`removeCuration` uncalled** (since Phase 9); delete only with approval.
 - Unstabilised source tilt (gyro horizon-levelling — large feature). `.cursor/` untracked; left as found.
+- The preview's slot-position indicator appears to skip "1/N" at the loop wrap (cosmetic; found while
+  verifying 10.2 — playback itself wraps correctly).
 
 ## 3. Phase 11 scope — full-quality whole-clip playback, animated splits, gated verifications
 

@@ -173,9 +173,14 @@ export function drawVideoFrame(
  * @param slotDurationSec - The slot's length; enables the play-then-hold rule
  * @returns The absolute time in the video to seek to
  */
-export function getVideoTime(progress: number, media: MediaFile, slotDurationSec?: number): number {
+export function getVideoTime(progress: number, media: MediaFile, slotDurationSec?: number, sourceStartSec?: number): number {
   const start = media.trimStart ?? 0;
   const end = media.trimEnd ?? (media.duration ?? 0);
+  // Phase 10.2: the slot owns its own 1× window of the source (fitSlotsToFootage)
+  // — progress maps to real seconds inside it, clamped to the trimmed footage.
+  if (sourceStartSec !== undefined && slotDurationSec !== undefined) {
+    return Math.min(sourceStartSec + progress * slotDurationSec, Math.max(sourceStartSec, end));
+  }
   const footage = end - start;
   if (slotDurationSec !== undefined && slotDurationSec > footage) {
     return start + Math.min(progress * slotDurationSec, footage);

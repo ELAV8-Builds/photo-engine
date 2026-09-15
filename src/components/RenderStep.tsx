@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { MediaFile, MusicTrack, RenderProgress, SmartTemplate, TemplateSlot, TemplateTheme, TextOverlay, TextOverlayOverride } from '@/types';
-import { SMART_TEMPLATES, assignMediaToSlots, expandTemplateForMedia, formatDuration, getSlotMediaIds, applyBeatSync, overrideForSlot } from '@/lib/templates';
+import { SMART_TEMPLATES, assignMediaToSlots, expandTemplateForMedia, fitSlotsToFootage, formatDuration, getSlotMediaIds, applyBeatSync, overrideForSlot } from '@/lib/templates';
 import { detectBeats, quantizeSlotsToBeat, getStrongBeats } from '@/lib/beat-detect';
 import { createParticles, updateParticles, drawParticles, drawVignette, drawTintOverlay, getParticleCSS, Particle } from '@/lib/particles';
 import { drawTextOverlay, resolveTextOverlay, getBackdropPreviewCSS, getTextAnimationCSS } from '@/lib/text-renderer';
@@ -124,7 +124,7 @@ export default function RenderStep(props: RenderStepProps) {
   }, [baseTemplate, selectedMedia.length, music?.duration, storyRoles]);
 
   // Apply beat sync to the expanded template (if beats detected)
-  const template = useMemo(() => {
+  const beatTemplate = useMemo(() => {
     if (!expandedTemplate) return null;
     if (!beatInfo || beatInfo.beats.length < 4) return expandedTemplate;
 
@@ -142,8 +142,8 @@ export default function RenderStep(props: RenderStepProps) {
   const mediaIds = useMemo(() => selectedMedia.map(m => m.id), [selectedMedia]);
   const mediaKinds = useMemo(() => new Map(selectedMedia.map(m => [m.id, m.type] as const)), [selectedMedia]);
   const slotAssignments = useMemo(
-    () => (template ? assignMediaToSlots(template, mediaIds, mediaKinds) : []),
-    [template, mediaIds, mediaKinds],
+    () => (beatTemplate ? assignMediaToSlots(beatTemplate, mediaIds, mediaKinds) : []),
+    [beatTemplate, mediaIds, mediaKinds],
   );
 
   const mediaById = useMemo(() => {
@@ -151,6 +151,16 @@ export default function RenderStep(props: RenderStepProps) {
     selectedMedia.forEach(m => map.set(m.id, m));
     return map;
   }, [selectedMedia]);
+
+  // Phase 10.2 (owner directive): every video slot gets its own 1× window of
+  // its source — no speed changes, no frozen frames. Slots shrink when footage
+  // runs short, so the montage (and its music) simply ends earlier.
+  const fitted = useMemo(
+    () => (beatTemplate ? fitSlotsToFootage(beatTemplate, slotAssignments, mediaById) : null),
+    [beatTemplate, slotAssignments, mediaById],
+  );
+  const template = fitted?.template ?? null;
+  const slotWindows = fitted?.windows;
 
   // Keep ref in sync so animation loop always reads latest trim values
   useEffect(() => {
@@ -226,13 +236,11 @@ export default function RenderStep(props: RenderStepProps) {
           setPreviewSlotIndex(frame.slotIndex);
         }
 
-        // Phase 10.1: the active slot's video *plays* (muted) instead of being
-        // seeked every animation frame — per-frame seeking was the preview's
-        // jumpiness. The timeline clock still rules: drift beyond 0.35 s
-        // resyncs (loop wrap, slot re-entry), playbackRate matches the slot's
-        // proportional speed when the slot is shorter than the footage, and a
-        // slot *longer* than the footage pauses on the final frame instead of
-        // slow motion (getVideoTime holds). The export still seeks per frame.
+        // Phase 10.2 (owner directive): the active slot's video *plays* at 1× —
+        // never sped up, never slowed, never frozen. Each slot owns its own
+        // window of the source (fitSlotsToFootage), sized to the slot, so real
+        // playback and the timeline clock advance together; drift beyond
+        // 0.35 s (loop wrap, slot re-entry) resyncs with one seek in flight.
         const driveActiveVideo = (slotIdx: number, progress: number) => {
           const mid = slotAssignments[slotIdx] || '';
           const media = mediaByIdRef.current.get(mid);
@@ -244,36 +252,21 @@ export default function RenderStep(props: RenderStepProps) {
           if (activeVideo && activeVideo !== source) activeVideo.pause();
           activeVideo = source;
           const slotDur = slotConfigs[slotIdx]?.duration;
-          const target = getVideoTime(progress, media, slotDur);
-          const footage = (media.trimEnd ?? media.duration ?? 0) - (media.trimStart ?? 0);
-          const holding = slotDur !== undefined && slotDur > footage && progress * slotDur >= footage;
-          if (holding) {
-            if (!source.paused) source.pause();
-            if (!source.seeking && Math.abs(source.currentTime - target) > 0.1) source.currentTime = target;
-            return;
-          }
-          const ratio = slotDur !== undefined && slotDur < footage && slotDur > 0 ? footage / slotDur : 1;
-          if (ratio > 4) {
-            // A whole clip in a short slot runs faster than any real playbackRate.
-            // Step-seek with one seek in flight — chasing the clock with per-frame
-            // seeks (the pre-10.1 behaviour) outran the decoder and froze the picture.
-            if (!source.paused) source.pause();
-            if (!source.seeking && Math.abs(source.currentTime - target) > 0.2) source.currentTime = target;
-            return;
-          }
-          if (Math.abs(source.playbackRate - ratio) > 0.01) source.playbackRate = ratio;
+          const win = slotWindows?.get(slotIdx);
+          const target = getVideoTime(progress, media, slotDur, win?.start);
+          if (source.playbackRate !== 1) source.playbackRate = 1; // shared elements may carry old rates
           if (!source.seeking && Math.abs(source.currentTime - target) > 0.35) source.currentTime = target;
           if (source.paused) source.play().catch(() => { /* autoplay refusal: the resync seek above keeps frames roughly right */ });
         };
 
         driveActiveVideo(frame.slotIndex, frame.slotProgress);
         if (frame.inTransition) {
-          // The incoming slot shows its opening moments; park it at the trim start.
+          // The incoming slot shows its opening moments; park it at its window start.
           const mid = slotAssignments[frame.transitionDstSlot] || '';
           const media = mediaByIdRef.current.get(mid);
           const source = imageMap.get(frame.transitionDstSlot);
           if (media?.type === 'video' && source instanceof HTMLVideoElement && !source.seeking) {
-            const t0 = getVideoTime(0, media);
+            const t0 = slotWindows?.get(frame.transitionDstSlot)?.start ?? getVideoTime(0, media);
             if (Math.abs(source.currentTime - t0) > 0.05) source.currentTime = t0;
           }
         }
@@ -410,8 +403,8 @@ export default function RenderStep(props: RenderStepProps) {
       if (media.type === 'video') {
         // Load real video element for video-type media
         getVideoElement(media).then((video) => {
-          // Seek to trim start (returned so a bounded-seek rejection reaches the fallback below)
-          const startTime = media.trimStart ?? 0;
+          // Seek to this slot's own window start (returned so a bounded-seek rejection reaches the fallback below)
+          const startTime = slotWindows?.get(i)?.start ?? media.trimStart ?? 0;
           return seekToTime(video, startTime).then(() => {
             imageMap.set(i, video);
             imagesLoaded++;
@@ -688,6 +681,7 @@ export default function RenderStep(props: RenderStepProps) {
               globalFrameNumber,
               FPS,
               signal,
+              slotWindows?.get(i)?.start,
             );
           } else {
             // Empty slot — hold black frames
@@ -726,6 +720,8 @@ export default function RenderStep(props: RenderStepProps) {
                 globalFrameNumber,
                 FPS,
                 signal,
+                slotWindows?.get(i)?.start,
+                slotWindows?.get(i + 1)?.start,
               );
             } catch (err) {
               throw describeRenderError(err, `the transition into slot ${i + 2} (${nextMedia.name})`, globalFrameNumber);
@@ -760,9 +756,9 @@ export default function RenderStep(props: RenderStepProps) {
               ensureNotAborted();
               const fadeProgress = f / fadeFrames;
 
-              // Hold on the last frame of the slot
+              // Hold on the last frame of the slot's own window (the fade masks the freeze)
               if (isVideo) {
-                const videoTime = getVideoTime(1, lastMedia, lastSlot.duration);
+                const videoTime = getVideoTime(1, lastMedia, lastSlot.duration, slotWindows?.get(lastSlotIndex)?.start);
                 await seekToTime(lastSource as HTMLVideoElement, videoTime, undefined, signal);
               }
 
@@ -883,7 +879,7 @@ export default function RenderStep(props: RenderStepProps) {
     } finally {
       if (exportAbortRef.current === controller) exportAbortRef.current = null;
     }
-  }, [template, slotAssignments, selectedMedia, mediaById, mediaKinds, aspectRatio, outputQuality, music, textOverrides, mixerOverrides, musicTracks, onExportComplete]);
+  }, [template, slotAssignments, slotWindows, selectedMedia, mediaById, mediaKinds, aspectRatio, outputQuality, music, textOverrides, mixerOverrides, musicTracks, onExportComplete]);
 
   /** Phase 7: stop the export. During encoding the WASM worker must be killed. */
   const cancelExport = useCallback(() => {
@@ -1397,11 +1393,11 @@ function mediaForSlot(media: MediaFile | undefined, slot: TemplateSlot): MediaFi
   return { ...media, url: media.planetUrl, width: 1080, height: 1080, faces: [] };
 }
 
-function loadMediaImage(media: MediaFile, signal?: AbortSignal): Promise<CanvasImageSource> {
+function loadMediaImage(media: MediaFile, signal?: AbortSignal, startSec?: number): Promise<CanvasImageSource> {
   if (media.type === 'video') {
-    // Return a video element seeked to trim start for real frame rendering
+    // Return a video element seeked to its window start for real frame rendering
     return getVideoElement(media).then(async (video) => {
-      const startTime = media.trimStart ?? 0;
+      const startTime = startSec ?? media.trimStart ?? 0;
       await seekToTime(video, startTime, undefined, signal);
       return video as CanvasImageSource;
     }).catch((err) => {
@@ -1543,8 +1539,10 @@ async function renderSlotFramesToFFmpeg(
   startFrame: number,
   fps: number,
   signal?: AbortSignal,
+  /** Phase 10.2: this slot's own window of the source (fitSlotsToFootage). */
+  sourceStart?: number,
 ): Promise<number> {
-  const source = await loadMediaImage(media, signal);
+  const source = await loadMediaImage(media, signal, sourceStart);
   const isVideo = media.type === 'video' && source instanceof HTMLVideoElement;
   const frames = Math.round(slot.duration * fps);
   const { fx, fy } = getFocusPoint(media, slot.holdPoint);
@@ -1568,10 +1566,10 @@ async function renderSlotFramesToFFmpeg(
     const t = frames > 1 ? frame / (frames - 1) : 0;
     const globalTime = t * slotConfig.duration;
 
-    // For video media, seek to the correct time for this frame (Phase 10.1:
-    // the slot duration lets a long slot play 1× and hold instead of slow-mo)
+    // For video media, seek to the correct time for this frame — Phase 10.2:
+    // real seconds inside this slot's own window, 1× by construction.
     if (isVideo) {
-      const videoTime = getVideoTime(t, media, slot.duration);
+      const videoTime = getVideoTime(t, media, slot.duration, sourceStart);
       await seekToTime(source as HTMLVideoElement, videoTime, undefined, signal);
     }
 
@@ -1623,11 +1621,14 @@ async function renderTransitionFramesToFFmpeg(
   startFrame: number,
   fps: number,
   signal?: AbortSignal,
+  /** Phase 10.2: the outgoing/incoming slots' own source windows (fitSlotsToFootage). */
+  fromSourceStart?: number,
+  toSourceStart?: number,
 ): Promise<number> {
   if (toSlot.transition === 'none') return startFrame;
 
-  const fromSource = await loadMediaImage(fromMedia, signal);
-  const toSource = await loadMediaImage(toMedia, signal);
+  const fromSource = await loadMediaImage(fromMedia, signal, fromSourceStart);
+  const toSource = await loadMediaImage(toMedia, signal, toSourceStart);
   const fromIsVideo = fromMedia.type === 'video' && fromSource instanceof HTMLVideoElement;
   const toIsVideo = toMedia.type === 'video' && toSource instanceof HTMLVideoElement;
 
@@ -1655,14 +1656,14 @@ async function renderTransitionFramesToFFmpeg(
 
     // Seek video sources during transition
     if (fromIsVideo) {
-      // From video is near its end during transition
+      // From video is near its window's end during transition
       const fromProgress = Math.min(1, (transStart + t * transDuration) / fromConfig.duration);
-      const fromTime = getVideoTime(fromProgress, fromMedia, fromConfig.duration);
+      const fromTime = getVideoTime(fromProgress, fromMedia, fromConfig.duration, fromSourceStart);
       await seekToTime(fromSource as HTMLVideoElement, fromTime, undefined, signal);
     }
     if (toIsVideo) {
-      // To video starts from beginning during transition
-      const toTime = getVideoTime(t * 0.1, toMedia); // First 10% of clip during transition
+      // To video shows the opening instants of its own window during the transition
+      const toTime = toSourceStart !== undefined ? toSourceStart + t * transDuration : getVideoTime(t * 0.1, toMedia);
       await seekToTime(toSource as HTMLVideoElement, toTime, undefined, signal);
     }
 

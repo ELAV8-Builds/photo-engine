@@ -1403,6 +1403,91 @@ export function renderedDurationSec(slots: ReadonlyArray<Pick<TemplateSlot, 'dur
  */
 const FIT_MAX_SLOT_SEC = 8;
 
+/** A video slot's piece of its source: absolute seconds into the file. */
+export interface SlotSourceWindow {
+  start: number;
+  duration: number;
+}
+
+/** Pieces shorter than this feel like glitches; repeat a piece rather than cut below it. */
+const MIN_PIECE_SEC = 2;
+
+/**
+ * Phase 10.2 (owner directive): video in a slot plays real footage at 1× —
+ * never sped up, never slowed, never a frozen frame. Every appearance of a
+ * video gets its own window of the source:
+ *   - footage to spare → windows spread across the whole file with even gaps
+ *     (a 20-minute clip fills a 4-minute song with pieces from throughout);
+ *   - footage tight → distinct sequential pieces, slots shortened to fit
+ *     (the montage ends earlier; durations are honest, so the music is
+ *     trimmed with it);
+ *   - footage too short to split into ≥2 s pieces → the same piece repeats
+ *     at 1× (repetition beats slow motion and frozen frames).
+ * Photos are untouched. Returns the duration-adjusted template (totalDuration
+ * recomputed) plus each video slot's source window.
+ */
+export function fitSlotsToFootage(
+  template: SmartTemplate,
+  slotAssignments: ReadonlyArray<string>,
+  mediaById: ReadonlyMap<string, { type: 'photo' | 'video'; duration?: number; trimStart?: number; trimEnd?: number }>,
+): { template: SmartTemplate; windows: Map<number, SlotSourceWindow> } {
+  const windows = new Map<number, SlotSourceWindow>();
+  const slots = template.slots.map((s) => ({ ...s }));
+
+  const appearancesByMedia = new Map<string, number[]>();
+  slots.forEach((slot, i) => {
+    if ((slot.layout ?? 'single') !== 'single') return; // split tiles are photos
+    const id = slotAssignments[i] || '';
+    const m = id ? mediaById.get(id) : undefined;
+    if (!m || m.type !== 'video') return;
+    const list = appearancesByMedia.get(id) ?? [];
+    list.push(i);
+    appearancesByMedia.set(id, list);
+  });
+
+  appearancesByMedia.forEach((appearances, id) => {
+    const m = mediaById.get(id)!;
+    const sourceStart = m.trimStart ?? 0;
+    const footage = Math.max(0.1, (m.trimEnd ?? m.duration ?? 0) - sourceStart);
+    const want = appearances.map((i) => slots[i].duration);
+    const total = want.reduce((a, b) => a + b, 0);
+
+    if (total <= footage) {
+      // Spread the pieces across the whole file, chronological, even gaps.
+      const gap = (footage - total) / (appearances.length + 1);
+      let cursor = sourceStart + gap;
+      appearances.forEach((i, a) => {
+        windows.set(i, { start: cursor, duration: want[a] });
+        cursor += want[a] + gap;
+      });
+      return;
+    }
+
+    const budget = footage / appearances.length;
+    if (budget >= MIN_PIECE_SEC) {
+      // Distinct sequential pieces; each slot shrinks to its share.
+      appearances.forEach((i, a) => {
+        const d = Math.max(MIN_PIECE_SEC, Math.round(Math.min(want[a], budget) * 10) / 10);
+        slots[i].duration = Math.min(d, Math.round(budget * 10) / 10);
+        windows.set(i, { start: sourceStart + a * budget, duration: slots[i].duration });
+      });
+      return;
+    }
+
+    // Not enough footage to split: every appearance replays the same piece at 1×.
+    appearances.forEach((i, a) => {
+      const d = Math.round(Math.min(want[a], footage) * 10) / 10;
+      slots[i].duration = Math.max(0.5, d);
+      windows.set(i, { start: sourceStart, duration: slots[i].duration });
+    });
+  });
+
+  return {
+    template: { ...template, slots, totalDuration: renderedDurationSec(slots, template.fadeOutDuration) },
+    windows,
+  };
+}
+
 export function expandTemplateForMedia(
   template: SmartTemplate,
   mediaCount: number,
