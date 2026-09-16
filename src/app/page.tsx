@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useMemo, Suspense } from 'react';
+import { useState, useCallback, useEffect, useMemo, Suspense, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Header from '@/components/Header';
 import MediaStep from '@/components/MediaStep';
@@ -19,6 +19,8 @@ import type { MixerOverrides } from '@/components/TemplateMixer';
 function HomeContent() {
   const searchParams = useSearchParams();
   const projectIdParam = searchParams.get('project');
+
+  const mediaStepRef = useRef<{ triggerUpload: () => void } | null>(null);
 
   const [step, setStep] = useState<Step>('media');
   const [media, setMedia] = useState<MediaFile[]>([]);
@@ -221,8 +223,47 @@ function HomeContent() {
       />
 
       <main id="main-content" className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 py-8">
+        {/* Create New Project CTA — shown when no project has started */}
+        {step === 'media' && media.length === 0 && (
+          <section className="mb-12 cta-section">
+            <div className="card-glow p-10 sm:p-14 text-center">
+              <div className="flex justify-center mb-6">
+                <div className="w-20 h-20 rounded-2xl bg-accent-gold/10 border-2 border-accent-gold/30 flex items-center justify-center">
+                  <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="text-accent-gold" strokeWidth="1.5">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="8" x2="12" y2="16" />
+                    <line x1="8" y1="12" x2="16" y2="12" />
+                  </svg>
+                </div>
+              </div>
+              <h1 className="text-3xl sm:text-4xl font-bold text-white mb-4">
+                Create New Project
+              </h1>
+              <p className="text-text-secondary text-lg max-w-xl mx-auto mb-8">
+                Bring your photos and videos to life with cinematic transitions, smart story planning, and professional color grading. Start by uploading your media.
+              </p>
+              <button
+                onClick={() => mediaStepRef.current?.triggerUpload()}
+                className="btn-gold inline-flex items-center gap-2 px-8 py-3 text-lg"
+                aria-label="Start a new project by uploading media"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="17 8 12 3 7 8" />
+                  <line x1="12" y1="3" x2="12" y2="15" />
+                </svg>
+                Start Creating
+              </button>
+              <p className="text-text-muted text-sm mt-4">
+                Drag and drop files anywhere on this page
+              </p>
+            </div>
+          </section>
+        )}
+
         {step === 'media' && (
           <MediaStep
+            ref={mediaStepRef}
             media={media}
             onMediaChange={setMedia}
             onNext={() => setStep('template')}

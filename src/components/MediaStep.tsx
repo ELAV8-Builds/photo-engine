@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef, forwardRef, useImperativeHandle } from 'react';
 import { MediaFile } from '@/types';
 import { detectFaces } from '@/lib/face-detect';
 import { saveTrimMemory, loadTrimMemory } from '@/lib/trim-memory';
@@ -32,8 +32,15 @@ interface FailedFile {
   error: string;
 }
 
-export default function MediaStep({ media, onMediaChange, onNext, suggestedPickCount = 12 }: MediaStepProps) {
+export default forwardRef(function MediaStep(
+  { media, onMediaChange, onNext, suggestedPickCount = 12 }: MediaStepProps,
+  ref: React.ForwardedRef<{ triggerUpload: () => void }>
+) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useImperativeHandle(ref, () => ({
+    triggerUpload: () => fileInputRef.current?.click(),
+  }));
   const [processing, setProcessing] = useState(false);
   const [processingMessage, setProcessingMessage] = useState('');
   const [processingPercent, setProcessingPercent] = useState(0);
@@ -560,7 +567,7 @@ export default function MediaStep({ media, onMediaChange, onNext, suggestedPickC
       </div>
     </div>
   );
-}
+});
 
 // ====================================================================
 // Inline Video Trimmer
