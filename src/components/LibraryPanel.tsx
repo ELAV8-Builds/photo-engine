@@ -522,7 +522,9 @@ export default function LibraryPanel({ inProjectIds, inProjectMediaIds, suggeste
       {items.length > 0 && (
         <>
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-1" role="tablist" aria-label="Filter by type">
+            {/* Media kind filter controls with active indication for visible filter state */}
+            <div className="flex items-center gap-2" role="tablist" aria-label="Filter by type">
+              <span className="text-xs text-text-muted mr-1">Filter:</span>
               {(['all', 'photo', 'video'] as KindFilter[]).map((k) => (
                 <button
                   key={k}
@@ -530,8 +532,10 @@ export default function LibraryPanel({ inProjectIds, inProjectMediaIds, suggeste
                   role="tab"
                   aria-selected={filter === k}
                   onClick={() => setFilter(k)}
-                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                    filter === k ? 'bg-accent-gold text-bg-main' : 'text-text-secondary hover:text-white bg-bg-input'
+                  className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-all duration-200 border-2 ${
+                    filter === k
+                      ? 'bg-accent-gold text-bg-main border-accent-gold shadow-lg shadow-accent-gold/20 scale-105'
+                      : 'bg-bg-input text-text-secondary border-border-subtle hover:text-white hover:border-border-gold hover:bg-bg-elevated'
                   }`}
                 >
                   {k === 'all' ? `All ${items.length}` : k === 'photo' ? `Photos ${items.filter((i) => i.kind === 'photo').length}` : `Videos ${items.filter((i) => i.kind === 'video').length}`}

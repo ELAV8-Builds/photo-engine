@@ -1,4 +1,5 @@
 import type { Config } from 'tailwindcss';
+import type { PluginUtils } from 'tailwindcss/types/config';
 
 const config: Config = {
   content: ['./src/**/*.{ts,tsx}'],
@@ -60,9 +61,26 @@ const config: Config = {
           '100%': { textShadow: '0 0 20px rgba(255, 215, 0, 0.6)' },
         },
       },
+      backgroundImage: {
+        'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
+      },
     },
   },
-  plugins: [],
+  plugins: [
+    ({ addUtilities }: { addUtilities: (utilities: Record<string, any>) => void }) => {
+      const newUtilities = {
+      '.fade-in-0': { opacity: '0' },
+      '.fade-in-100': { opacity: '1' },
+      '.slide-in-from-top-1': { transform: 'translateY(-4px)' },
+      '.slide-in-from-top-2': { transform: 'translateY(-8px)' },
+      '.slide-in-from-bottom-2': { transform: 'translateY(8px)' },
+      '.slide-in-from-bottom-3': { transform: 'translateY(12px)' },
+      '.zoom-in-95': { transform: 'scale(0.95)' },
+      '.zoom-in-100': { transform: 'scale(1)' },
+    };
+      addUtilities(newUtilities);
+    },
+  ],
 };
 
 export default config;

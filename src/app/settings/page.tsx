@@ -40,6 +40,7 @@ export default function SettingsPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dirtyAi, setDirtyAi] = useState(false);
+  const [aiSaveStatus, setAiSaveStatus] = useState<'idle' | 'saved'>('idle');
 
   useEffect(() => {
     let cancelled = false;
@@ -84,6 +85,8 @@ export default function SettingsPage() {
       const saved = await saveProviderSettings(ai);
       setAi(saved);
       setDirtyAi(false);
+      setAiSaveStatus('saved');
+      setTimeout(() => setAiSaveStatus('idle'), 2000);
       if (!cloudProviderActive(saved)) await libraryApi.clearCloudSession().catch(() => undefined);
       libraryApi.capabilities().then(setCaps).catch(() => undefined);
       flash(cloudProviderActive(saved) ? 'Gemini is on. Frames and captions will be sent to Google when you analyse or write a story.' : 'Local AI only. Nothing leaves this Mac.');
@@ -135,9 +138,9 @@ export default function SettingsPage() {
           <div className="flex items-center gap-3">
             <img src="/icons/logo.svg" alt="" className="w-8 h-8" aria-hidden="true" />
             <div>
-              <h1 className="text-sm font-bold text-white tracking-wide">
+              <div className="text-sm font-bold text-white tracking-wide" aria-label="PhotoForge Settings">
                 PHOTO<span className="text-accent-gold">FORGE</span>
-              </h1>
+              </div>
               <p className="text-[10px] text-text-muted font-mono tracking-widest uppercase">Settings</p>
             </div>
           </div>
@@ -347,7 +350,7 @@ export default function SettingsPage() {
 
           <div className="flex flex-wrap items-center gap-2">
             <button type="button" onClick={saveAi} disabled={!ai || !dirtyAi || saving === 'ai'} className="btn-gold !py-2 !px-4 !rounded-full text-sm">
-              {saving === 'ai' ? 'Saving…' : 'Save provider'}
+              {saving === 'ai' ? 'Saving…' : aiSaveStatus === 'saved' ? 'Saved ✓' : 'Save provider'}
             </button>
             <button
               type="button"

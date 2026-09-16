@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useMemo, Suspense } from 'react';
+import { useState, useCallback, useEffect, useMemo, Suspense, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Header from '@/components/Header';
 import MediaStep from '@/components/MediaStep';
@@ -19,6 +19,8 @@ import type { MixerOverrides } from '@/components/TemplateMixer';
 function HomeContent() {
   const searchParams = useSearchParams();
   const projectIdParam = searchParams.get('project');
+
+  const mediaStepRef = useRef<{ triggerUpload: () => void } | null>(null);
 
   const [step, setStep] = useState<Step>('media');
   const [media, setMedia] = useState<MediaFile[]>([]);
@@ -220,9 +222,62 @@ function HomeContent() {
         projectName={projectName || undefined}
       />
 
-      <main id="main-content" className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 py-8">
+      <main id="main-content" className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 py-12">
+        {/* Create New Project CTA — shown when no project has started */}
+        {step === 'media' && media.length === 0 && (
+          <section className="mb-16 animate-in fade-in-0 slide-in-from-bottom-3">
+            <div className="card-glow p-12 sm:p-16 text-center relative overflow-hidden">
+              {/* Subtle background accent */}
+              <div className="absolute inset-0 bg-gradient-to-br from-accent-gold/0 via-accent-gold/5 to-accent-gold/0 pointer-events-none" />
+              
+              {/* Glowing decorative element */}
+              <div className="absolute -top-20 -right-20 w-64 h-64 bg-accent-gold/5 rounded-full blur-3xl pointer-events-none" />
+              <div className="absolute -bottom-20 -left-20 w-64 h-64 bg-accent-gold/5 rounded-full blur-3xl pointer-events-none" />
+              
+              <div className="relative z-10">
+                <div className="flex justify-center mb-8">
+                  <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-accent-gold/20 to-accent-gold/5 border-2 border-accent-gold/40 flex items-center justify-center shadow-lg shadow-accent-gold/20 animate-in fade-in-0 zoom-in-100">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="text-accent-gold" strokeWidth="1.5">
+                      <circle cx="12" cy="12" r="10" />
+                      <line x1="12" y1="8" x2="12" y2="16" />
+                      <line x1="8" y1="12" x2="16" y2="12" />
+                    </svg>
+                  </div>
+                </div>
+                <h1 className="text-4xl sm:text-5xl font-extrabold text-white mb-6 tracking-tight animate-in fade-in-0 slide-in-from-bottom-2">
+                  Create New Project
+                </h1>
+                <p className="text-text-secondary text-lg sm:text-xl max-w-2xl mx-auto mb-10 leading-relaxed animate-in fade-in-0 slide-in-from-bottom-2" style={{ animationDelay: '100ms' }}>
+                  Bring your photos and videos to life with cinematic transitions, smart story planning, and professional color grading. Start by uploading your media.
+                </p>
+                <div className="flex flex-col sm:flex-row items-center justify-center gap-4 animate-in fade-in-0 slide-in-from-bottom-2" style={{ animationDelay: '200ms' }}>
+                  <button
+                    onClick={() => mediaStepRef.current?.triggerUpload()}
+                    className="btn-gold inline-flex items-center gap-3 px-10 py-4 text-base shadow-lg shadow-accent-gold/25 hover:shadow-accent-gold/40 hover:shadow-xl transition-all duration-300"
+                    aria-label="Start a new project by uploading media"
+                  >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      <polyline points="17 8 12 3 7 8" />
+                      <line x1="12" y1="3" x2="12" y2="15" />
+                    </svg>
+                    Start Creating
+                  </button>
+                </div>
+                <p className="text-text-muted text-sm mt-6 flex items-center justify-center gap-2 animate-in fade-in-0" style={{ animationDelay: '300ms' }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="text-accent-gold/60" strokeWidth="2">
+                    <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+                  </svg>
+                  Drag and drop files anywhere on this page
+                </p>
+              </div>
+            </div>
+          </section>
+        )}
+
         {step === 'media' && (
           <MediaStep
+            ref={mediaStepRef}
             media={media}
             onMediaChange={setMedia}
             onNext={() => setStep('template')}
