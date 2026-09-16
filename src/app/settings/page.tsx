@@ -138,9 +138,9 @@ export default function SettingsPage() {
           <div className="flex items-center gap-3">
             <img src="/icons/logo.svg" alt="" className="w-8 h-8" aria-hidden="true" />
             <div>
-              <h1 className="text-sm font-bold text-white tracking-wide">
+              <div className="text-sm font-bold text-white tracking-wide" aria-label="PhotoForge Settings">
                 PHOTO<span className="text-accent-gold">FORGE</span>
-              </h1>
+              </div>
               <p className="text-[10px] text-text-muted font-mono tracking-widest uppercase">Settings</p>
             </div>
           </div>
