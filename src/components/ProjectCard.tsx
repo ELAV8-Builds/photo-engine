@@ -57,7 +57,13 @@ export default function ProjectCard({
   };
 
   return (
-    <div className="card-glow group relative overflow-hidden rounded-2xl transition-all duration-300 hover:-translate-y-1 hover:shadow-gold-sm">
+    <div className="group relative overflow-hidden rounded-2xl transition-all duration-300 hover:-translate-y-1.5 hover:shadow-gold-md">
+      {/* Animated gradient overlay on hover */}
+      <div className="absolute inset-0 bg-gradient-to-br from-accent-gold/0 via-accent-gold/0 to-accent-gold/0 opacity-0 group-hover:opacity-10 transition-opacity duration-500 pointer-events-none" />
+      
+      {/* Subtle border glow on hover */}
+      <div className="absolute inset-0 rounded-2xl border border-accent-gold/0 group-hover:border-accent-gold/10 transition-colors duration-300 pointer-events-none" />
+      
       {/* Thumbnail */}
       <div
         className="aspect-video bg-bg-input relative cursor-pointer overflow-hidden rounded-t-2xl"
@@ -67,11 +73,11 @@ export default function ProjectCard({
           <img
             src={project.thumbnailUrl}
             alt={project.name}
-            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="text-text-muted/40" strokeWidth="1">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="text-text-muted/40 transition-transform duration-300 group-hover:scale-110" strokeWidth="1">
               <rect x="3" y="3" width="18" height="18" rx="2" />
               <circle cx="9" cy="9" r="2" />
               <path d="M21 15l-3.086-3.086a2 2 0 00-2.828 0L6 21" />
@@ -79,28 +85,28 @@ export default function ProjectCard({
           </div>
         )}
 
-        {/* Overlay badges */}
-        <div className="absolute top-2 left-2 flex items-center gap-1.5">
+        {/* Overlay badges - subtle entrance */}
+        <div className="absolute top-2 left-2 flex items-center gap-1.5 animate-in fade-in-0 slide-in-from-top-1">
           {project.aspectRatio !== '16:9' && (
-            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-black/60 text-white/80 backdrop-blur-sm transition-transform duration-200 group-hover:scale-110">
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-black/60 text-white/80 backdrop-blur-sm transition-all duration-300 group-hover:scale-110 group-hover:bg-black/70">
               {project.aspectRatio}
             </span>
           )}
-          <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-black/60 text-white/80 backdrop-blur-sm transition-transform duration-200 group-hover:scale-110">
+          <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-black/60 text-white/80 backdrop-blur-sm transition-all duration-300 group-hover:scale-110 group-hover:bg-black/70">
             {formatDuration(project.totalDuration)}
           </span>
         </div>
 
         {/* Media count badge */}
-        <div className="absolute top-2 right-2">
-          <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-black/60 text-white/80 backdrop-blur-sm transition-transform duration-200 group-hover:scale-110">
+        <div className="absolute top-2 right-2 animate-in fade-in-0 slide-in-from-top-1" style={{ animationDelay: '50ms' }}>
+          <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-black/60 text-white/80 backdrop-blur-sm transition-all duration-300 group-hover:scale-110 group-hover:bg-black/70">
             {project.mediaCount} item{project.mediaCount !== 1 ? 's' : ''}
           </span>
         </div>
 
-        {/* Hover overlay */}
-        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-          <span className="px-4 py-2 rounded-lg bg-accent-gold text-bg-main text-xs font-bold transform transition-transform duration-200 group-hover:scale-105">
+        {/* Hover overlay - smoother fade and scale */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
+          <span className="px-5 py-2.5 rounded-xl bg-accent-gold text-bg-main text-sm font-bold transform transition-all duration-300 group-hover:scale-110 group-hover:shadow-lg shadow-accent-gold/30">
             Open Project
           </span>
         </div>
