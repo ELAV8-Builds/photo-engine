@@ -57,10 +57,10 @@ export default function ProjectCard({
   };
 
   return (
-    <div className="card-glow group relative overflow-hidden transition-all hover:shadow-gold-sm">
+    <div className="card-glow group relative overflow-hidden rounded-2xl transition-all duration-300 hover:-translate-y-1 hover:shadow-gold-sm">
       {/* Thumbnail */}
       <div
-        className="aspect-video bg-bg-input relative cursor-pointer overflow-hidden"
+        className="aspect-video bg-bg-input relative cursor-pointer overflow-hidden rounded-t-2xl"
         onClick={() => onLoad(project.id)}
       >
         {project.thumbnailUrl ? (
@@ -82,32 +82,32 @@ export default function ProjectCard({
         {/* Overlay badges */}
         <div className="absolute top-2 left-2 flex items-center gap-1.5">
           {project.aspectRatio !== '16:9' && (
-            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-black/60 text-white/80 backdrop-blur-sm">
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-black/60 text-white/80 backdrop-blur-sm transition-transform duration-200 group-hover:scale-110">
               {project.aspectRatio}
             </span>
           )}
-          <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-black/60 text-white/80 backdrop-blur-sm">
+          <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-black/60 text-white/80 backdrop-blur-sm transition-transform duration-200 group-hover:scale-110">
             {formatDuration(project.totalDuration)}
           </span>
         </div>
 
         {/* Media count badge */}
         <div className="absolute top-2 right-2">
-          <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-black/60 text-white/80 backdrop-blur-sm">
+          <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-black/60 text-white/80 backdrop-blur-sm transition-transform duration-200 group-hover:scale-110">
             {project.mediaCount} item{project.mediaCount !== 1 ? 's' : ''}
           </span>
         </div>
 
         {/* Hover overlay */}
         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-          <span className="px-4 py-2 rounded-lg bg-accent-gold text-bg-main text-xs font-bold">
+          <span className="px-4 py-2 rounded-lg bg-accent-gold text-bg-main text-xs font-bold transform transition-transform duration-200 group-hover:scale-105">
             Open Project
           </span>
         </div>
       </div>
 
       {/* Info */}
-      <div className="p-3">
+      <div className="p-3 bg-bg-card border-t border-border-subtle rounded-b-2xl">
         <div className="flex items-center justify-between gap-2">
           {editing ? (
             <input
