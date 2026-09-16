@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { Step } from '@/types';
 
 const STEPS: { id: Step; label: string; num: number }[] = [
@@ -19,6 +20,7 @@ interface HeaderProps {
 
 export default function Header({ currentStep, onStepClick, canNavigate, projectName }: HeaderProps) {
   const currentIndex = STEPS.findIndex(s => s.id === currentStep);
+  const pathname = usePathname();
 
   return (
     <header className="border-b border-border-subtle bg-bg-card/80 backdrop-blur-md sticky top-0 z-50">
@@ -86,7 +88,12 @@ export default function Header({ currentStep, onStepClick, canNavigate, projectN
           <div className="flex items-center gap-3">
             <Link
               href="/projects"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-text-muted hover:text-white hover:bg-white/5 transition-colors"
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                pathname.startsWith('/projects')
+                  ? 'bg-accent-gold/10 text-accent-gold border border-accent-gold/30'
+                  : 'text-text-muted hover:text-white hover:bg-white/5'
+              }`}
+              aria-current={pathname.startsWith('/projects') ? 'page' : undefined}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                 <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" />
@@ -95,7 +102,12 @@ export default function Header({ currentStep, onStepClick, canNavigate, projectN
             </Link>
             <Link
               href="/settings"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-text-muted hover:text-white hover:bg-white/5 transition-colors"
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                pathname.startsWith('/settings')
+                  ? 'bg-accent-gold/10 text-accent-gold border border-accent-gold/30'
+                  : 'text-text-muted hover:text-white hover:bg-white/5'
+              }`}
+              aria-current={pathname.startsWith('/settings') ? 'page' : undefined}
               aria-label="Settings"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
